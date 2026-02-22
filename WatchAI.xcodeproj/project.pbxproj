@@ -6,8 +6,37 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		7C2198542F46BD0A00CB93F4 /* WatchAIWatch Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 7C21984A2F46BD0800CB93F4 /* WatchAIWatch Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		7C2198522F46BD0A00CB93F4 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 7C2198302F46BC5600CB93F4 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 7C2198492F46BD0800CB93F4;
+			remoteInfo = "WatchAIWatch Watch App";
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		7C2198582F46BD0A00CB93F4 /* Embed Watch Content */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
+			dstSubfolderSpec = 16;
+			files = (
+				7C2198542F46BD0A00CB93F4 /* WatchAIWatch Watch App.app in Embed Watch Content */,
+			);
+			name = "Embed Watch Content";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
 		7C2198382F46BC5600CB93F4 /* WatchAI.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WatchAI.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		7C21984A2F46BD0800CB93F4 /* WatchAIWatch Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "WatchAIWatch Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -16,10 +45,22 @@
 			path = WatchAI;
 			sourceTree = "<group>";
 		};
+		7C21984B2F46BD0800CB93F4 /* WatchAIWatch Watch App */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "WatchAIWatch Watch App";
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		7C2198352F46BC5600CB93F4 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7C2198472F46BD0800CB93F4 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -33,6 +74,7 @@
 			isa = PBXGroup;
 			children = (
 				7C21983A2F46BC5600CB93F4 /* WatchAI */,
+				7C21984B2F46BD0800CB93F4 /* WatchAIWatch Watch App */,
 				7C2198392F46BC5600CB93F4 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -41,6 +83,7 @@
 			isa = PBXGroup;
 			children = (
 				7C2198382F46BC5600CB93F4 /* WatchAI.app */,
+				7C21984A2F46BD0800CB93F4 /* WatchAIWatch Watch App.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -55,10 +98,12 @@
 				7C2198342F46BC5600CB93F4 /* Sources */,
 				7C2198352F46BC5600CB93F4 /* Frameworks */,
 				7C2198362F46BC5600CB93F4 /* Resources */,
+				7C2198582F46BD0A00CB93F4 /* Embed Watch Content */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				7C2198532F46BD0A00CB93F4 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				7C21983A2F46BC5600CB93F4 /* WatchAI */,
@@ -68,6 +113,28 @@
 			);
 			productName = WatchAI;
 			productReference = 7C2198382F46BC5600CB93F4 /* WatchAI.app */;
+			productType = "com.apple.product-type.application";
+		};
+		7C2198492F46BD0800CB93F4 /* WatchAIWatch Watch App */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 7C2198552F46BD0A00CB93F4 /* Build configuration list for PBXNativeTarget "WatchAIWatch Watch App" */;
+			buildPhases = (
+				7C2198462F46BD0800CB93F4 /* Sources */,
+				7C2198472F46BD0800CB93F4 /* Frameworks */,
+				7C2198482F46BD0800CB93F4 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				7C21984B2F46BD0800CB93F4 /* WatchAIWatch Watch App */,
+			);
+			name = "WatchAIWatch Watch App";
+			packageProductDependencies = (
+			);
+			productName = "WatchAIWatch Watch App";
+			productReference = 7C21984A2F46BD0800CB93F4 /* WatchAIWatch Watch App.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -81,6 +148,9 @@
 				LastUpgradeCheck = 2620;
 				TargetAttributes = {
 					7C2198372F46BC5600CB93F4 = {
+						CreatedOnToolsVersion = 26.2;
+					};
+					7C2198492F46BD0800CB93F4 = {
 						CreatedOnToolsVersion = 26.2;
 					};
 				};
@@ -100,12 +170,20 @@
 			projectRoot = "";
 			targets = (
 				7C2198372F46BC5600CB93F4 /* WatchAI */,
+				7C2198492F46BD0800CB93F4 /* WatchAIWatch Watch App */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		7C2198362F46BC5600CB93F4 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7C2198482F46BD0800CB93F4 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -122,7 +200,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		7C2198462F46BD0800CB93F4 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		7C2198532F46BD0A00CB93F4 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 7C2198492F46BD0800CB93F4 /* WatchAIWatch Watch App */;
+			targetProxy = 7C2198522F46BD0A00CB93F4 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		7C2198412F46BC5700CB93F4 /* Debug */ = {
@@ -252,7 +345,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = A6G8H8NGAM;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -266,7 +359,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.watchai.app.WatchAI;
+				PRODUCT_BUNDLE_IDENTIFIER = com.watchai.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -284,7 +377,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = A6G8H8NGAM;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -298,7 +391,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.watchai.app.WatchAI;
+				PRODUCT_BUNDLE_IDENTIFIER = com.watchai.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -307,6 +400,74 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		7C2198562F46BD0A00CB93F4 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 2;
+				DEVELOPMENT_TEAM = A6G8H8NGAM;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = WatchAI;
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "WatchAI needs microphone access to record your voice for the AI assistant.";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.watchai.app;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.watchai.app.watchkitapp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 26.2;
+			};
+			name = Debug;
+		};
+		7C2198572F46BD0A00CB93F4 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 2;
+				DEVELOPMENT_TEAM = A6G8H8NGAM;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = WatchAI;
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "WatchAI needs microphone access to record your voice for the AI assistant.";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.watchai.app;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.watchai.app.watchkitapp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 26.2;
 			};
 			name = Release;
 		};
@@ -327,6 +488,15 @@
 			buildConfigurations = (
 				7C2198442F46BC5700CB93F4 /* Debug */,
 				7C2198452F46BC5700CB93F4 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		7C2198552F46BD0A00CB93F4 /* Build configuration list for PBXNativeTarget "WatchAIWatch Watch App" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7C2198562F46BD0A00CB93F4 /* Debug */,
+				7C2198572F46BD0A00CB93F4 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
