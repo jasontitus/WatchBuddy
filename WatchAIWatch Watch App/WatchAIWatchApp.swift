@@ -9,9 +9,15 @@ import SwiftUI
 
 @main
 struct WatchAIWatch_Watch_AppApp: App {
+    @AppStorage("has_accepted_privacy") private var hasAccepted = false
+
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            if hasAccepted {
+                ContentView()
+            } else {
+                ConsentView()
+            }
         }
     }
 }

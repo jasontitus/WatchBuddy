@@ -11,7 +11,7 @@ final class NetworkManager: NSObject, ObservableObject {
     }()
 
     private var serverURL: String {
-        UserDefaults.standard.string(forKey: "server_url") ?? ""
+        UserDefaults.standard.string(forKey: "server_url") ?? "https://bell-elliptic-adella.ngrok-free.dev"
     }
 
     private var aiProvider: String {

@@ -3,43 +3,54 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WatchAI - Support</title>
+    <title>WatchBuddy – Support</title>
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 700px; margin: 40px auto; padding: 0 20px; color: #333; line-height: 1.6; }
-        h1 { font-size: 1.8em; }
-        h2 { font-size: 1.3em; margin-top: 2em; }
-        p { margin: 1em 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            max-width: 640px;
+            margin: 40px auto;
+            padding: 0 20px;
+            line-height: 1.6;
+            color: #333;
+        }
+        h1 { font-size: 1.5em; }
+        h2 { font-size: 1.15em; margin-top: 1.5em; }
+        p, ul { font-size: 0.95em; }
+        a { color: #0066cc; }
+        .faq-q { font-weight: 600; margin-top: 1em; margin-bottom: 0.2em; }
     </style>
 </head>
 <body>
-    <h1>WatchAI Support</h1>
+    <h1>WatchBuddy Support</h1>
+    <p>WatchBuddy is a voice assistant for Apple Watch that connects to AI providers to answer your questions using natural speech.</p>
 
-    <h2>About</h2>
-    <p>WatchAI is a voice assistant for Apple Watch. Tap the microphone, ask a question, and hear an AI-powered spoken response directly on your wrist.</p>
+    <h2>Frequently Asked Questions</h2>
 
-    <h2>Requirements</h2>
+    <p class="faq-q">What data does WatchBuddy send?</p>
+    <p>When you press the microphone button, your voice recording is sent to a server for speech-to-text processing. The transcribed text is then sent to an AI provider (Google Gemini, OpenAI, or Anthropic) to generate a response. In Server AI mode, the server handles everything; in BYOK mode, the watch sends text directly to the AI provider.</p>
+
+    <p class="faq-q">Does WatchBuddy store my data?</p>
+    <p>No. Audio and text are processed in real time and are not stored by the app. Your API key is kept securely in the device Keychain and never leaves your watch except to authenticate with the service you configured.</p>
+
+    <p class="faq-q">What is BYOK mode?</p>
+    <p>"Bring Your Own Key" mode lets you use your own API key with a supported AI provider. The server only handles speech conversion, while your watch communicates directly with the AI provider. This gives you full control over which provider processes your data.</p>
+
+    <p class="faq-q">Which AI providers are supported?</p>
+    <p>WatchBuddy supports Google Gemini, OpenAI, and Anthropic. You can switch between providers at any time in Settings.</p>
+
+    <p class="faq-q">Does WatchBuddy work offline?</p>
+    <p>No. WatchBuddy requires a network connection to communicate with the speech processing server and the AI provider. It will not function without internet access.</p>
+
+    <h2>Contact Us</h2>
+    <p>If you need help or want to report a problem:</p>
     <ul>
-        <li>Apple Watch running watchOS 10 or later</li>
-        <li>Internet connection (Wi-Fi or cellular)</li>
+        <li>Email: <a href="mailto:support@tiltastech.com">support@tiltastech.com</a></li>
+        <li>GitHub: <a href="https://github.com/jasontitus/WatchBuddy/issues">Open an issue</a></li>
     </ul>
 
-    <h2>How to Use</h2>
-    <ol>
-        <li>Open WatchAI on your Apple Watch</li>
-        <li>Tap the blue microphone button</li>
-        <li>Ask your question</li>
-        <li>Tap stop when finished</li>
-        <li>Listen to the AI response</li>
-    </ol>
-
-    <h2>Troubleshooting</h2>
-    <p><strong>No response after recording:</strong> Check that your watch has an internet connection. The app requires a network connection to process your voice.</p>
-    <p><strong>Microphone permission denied:</strong> Go to Settings on your Apple Watch, find WatchAI, and enable microphone access.</p>
-
-    <h2>Contact</h2>
-    <p>For support, bug reports, or feature requests, please open an issue on our <a href="https://github.com/jasontitus/WatchBuddy">GitHub repository</a>.</p>
-
-    <h2>Privacy</h2>
-    <p>Read our <a href="privacy.html">Privacy Policy</a>.</p>
+    <h2>Links</h2>
+    <ul>
+        <li><a href="privacy.html">Privacy Policy</a></li>
+    </ul>
 </body>
 </html>

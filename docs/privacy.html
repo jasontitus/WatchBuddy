@@ -3,44 +3,76 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WatchAI - Privacy Policy</title>
+    <title>WatchBuddy – Privacy Policy</title>
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 700px; margin: 40px auto; padding: 0 20px; color: #333; line-height: 1.6; }
-        h1 { font-size: 1.8em; }
-        h2 { font-size: 1.3em; margin-top: 2em; }
-        p { margin: 1em 0; }
-        .date { color: #666; font-size: 0.9em; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            max-width: 640px;
+            margin: 40px auto;
+            padding: 0 20px;
+            line-height: 1.6;
+            color: #333;
+        }
+        h1 { font-size: 1.5em; }
+        h2 { font-size: 1.15em; margin-top: 1.5em; }
+        h3 { font-size: 1em; margin-top: 1em; }
+        p, ul { font-size: 0.95em; }
+        a { color: #0066cc; }
     </style>
 </head>
 <body>
-    <h1>WatchAI Privacy Policy</h1>
-    <p class="date">Last updated: February 21, 2026</p>
+    <h1>WatchBuddy Privacy Policy</h1>
+    <p><strong>Last updated:</strong> February 25, 2026</p>
 
     <h2>Overview</h2>
-    <p>WatchAI is a voice assistant app for Apple Watch. This policy explains how the app handles your data.</p>
+    <p>WatchBuddy is a voice assistant app for Apple Watch. Your privacy matters to us, so we designed the app to minimize the data it handles. This policy explains exactly what data leaves your device and where it goes.</p>
 
-    <h2>Audio Data</h2>
-    <p>When you use the microphone to ask a question, your voice recording is sent to a server for processing. The audio is transcribed to text, a response is generated, and a spoken reply is sent back to your watch. Audio recordings are processed in real time and are not stored permanently on the server.</p>
-
-    <h2>Data Collection</h2>
-    <p>WatchAI does not collect personal information, create user accounts, or track your activity. No analytics or advertising SDKs are included in the app.</p>
+    <h2>Data We Collect</h2>
+    <p>WatchBuddy does <strong>not</strong> collect, store, or share any personal data. Specifically:</p>
+    <ul>
+        <li>We do not use analytics, tracking, or advertising frameworks.</li>
+        <li>We do not collect device identifiers, usage statistics, or location data.</li>
+        <li>Your API key is stored securely in the device Keychain and is never sent anywhere except the services described below.</li>
+    </ul>
 
     <h2>Third-Party Services</h2>
-    <p>The server uses the following services to process your requests:</p>
+    <p>WatchBuddy operates in two modes. In both modes, data is processed in real time and is <strong>not stored</strong> by the app.</p>
+
+    <h3>Server AI Mode</h3>
+    <p>When "Use Server's AI" is enabled:</p>
     <ul>
-        <li><strong>Speech-to-text</strong>: Your audio is transcribed locally on the server.</li>
-        <li><strong>AI response generation</strong>: The transcribed text is sent to Google Gemini to generate a response.</li>
-        <li><strong>Text-to-speech</strong>: The response is converted to audio locally on the server.</li>
+        <li>Your voice recording and access key are sent to the server you configure in Settings.</li>
+        <li>The server handles speech-to-text, AI processing, and text-to-speech entirely on its side.</li>
+        <li>No data is sent directly from your watch to any AI provider.</li>
     </ul>
-    <p>Google Gemini's use of data is governed by <a href="https://policies.google.com/privacy">Google's Privacy Policy</a>.</p>
+
+    <h3>Bring Your Own Key (BYOK) Mode</h3>
+    <p>When "Use Server's AI" is disabled:</p>
+    <ul>
+        <li>Your voice recording is sent to the server you configure for speech-to-text conversion only.</li>
+        <li>The transcribed text is sent directly from your watch to the AI provider you selected, along with your API key.</li>
+        <li>The AI response text is sent back to the server for text-to-speech conversion.</li>
+    </ul>
+
+    <h3>AI Providers</h3>
+    <p>Depending on your settings, your transcribed text may be sent to one of the following third-party AI providers:</p>
+    <ul>
+        <li><strong>Google Gemini</strong> – <a href="https://policies.google.com/privacy">Privacy Policy</a></li>
+        <li><strong>OpenAI</strong> – <a href="https://openai.com/privacy">Privacy Policy</a></li>
+        <li><strong>Anthropic</strong> – <a href="https://www.anthropic.com/privacy">Privacy Policy</a></li>
+    </ul>
+    <p>Each provider processes data according to their own privacy policy. We encourage you to review the policy for the provider you choose.</p>
 
     <h2>Data Storage</h2>
-    <p>Audio recordings and transcriptions are processed transiently and deleted after each request is completed. No conversation history is stored.</p>
+    <p>All settings (server URL and AI provider preference) are stored locally on your device using standard watchOS storage. Your API key is stored in the Apple Keychain, which is encrypted and protected by the operating system.</p>
 
     <h2>Children's Privacy</h2>
-    <p>WatchAI does not knowingly collect personal information from children. The app processes voice queries without creating profiles or storing personal data.</p>
+    <p>WatchBuddy does not knowingly collect information from children under 13.</p>
+
+    <h2>Changes to This Policy</h2>
+    <p>If we update this policy, the new version will be posted on this page with a revised date.</p>
 
     <h2>Contact</h2>
-    <p>If you have questions about this privacy policy, please open an issue on our <a href="https://github.com/jasontitus/WatchBuddy">GitHub repository</a>.</p>
+    <p>If you have questions about this privacy policy, contact us at <a href="mailto:support@tiltastech.com">support@tiltastech.com</a> or open an issue on our <a href="https://github.com/jasontitus/WatchBuddy/issues">GitHub repository</a>.</p>
 </body>
 </html>

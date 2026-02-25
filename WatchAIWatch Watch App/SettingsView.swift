@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct SettingsView: View {
-    @AppStorage("server_url") private var serverURL = ""
+    @AppStorage("server_url") private var serverURL = "https://bell-elliptic-adella.ngrok-free.dev"
     @AppStorage("ai_provider") private var aiProvider = "gemini"
     @AppStorage("use_server_ai") private var useServerAI = false
     @State private var apiKey = ""
@@ -66,6 +66,10 @@ struct SettingsView: View {
                             .foregroundColor(.gray)
                     }
                 }
+            }
+            Section {
+                Link("Privacy Policy", destination: URL(string: "https://jasontitus.github.io/WatchBuddy/privacy.html")!)
+                    .font(.footnote)
             }
         }
         .navigationTitle("Settings")
