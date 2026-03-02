@@ -1,3 +1,4 @@
+import CommonCrypto
 import Combine
 import Foundation
 
@@ -22,26 +23,60 @@ final class NetworkManager: NSObject, ObservableObject {
         KeychainManager.load(key: "api_key") ?? ""
     }
 
-    private var useServerAI: Bool {
-        UserDefaults.standard.bool(forKey: "use_server_ai")
-    }
+    /// Cached access key hash fetched from the server's /health endpoint.
+    private var cachedAccessKeyHash: String?
 
     private let systemPrompt = "You are a helpful voice assistant on an Apple Watch. Be concise. Reply in 1-2 short sentences. Never use markdown or special formatting."
+
+    // MARK: - Access key hash
+
+    /// Fetch the access key hash from the server and cache it.
+    func fetchAccessKeyHash(completion: ((Bool) -> Void)? = nil) {
+        guard let endpoint = URL(string: "\(serverURL)/health") else {
+            completion?(false); return
+        }
+
+        let task = urlSession.dataTask(with: endpoint) { [weak self] data, _, error in
+            guard let data = data, error == nil,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let hash = json["access_key_hash"] as? String else {
+                completion?(false); return
+            }
+            self?.cachedAccessKeyHash = hash
+            completion?(true)
+        }
+        task.resume()
+    }
+
+    /// Check if the stored key is the trusted access key by comparing SHA-256 hashes locally.
+    private var isTrustedKey: Bool {
+        guard let serverHash = cachedAccessKeyHash, !serverHash.isEmpty else { return false }
+        let key = apiKey
+        guard !key.isEmpty else { return false }
+        return sha256(key) == serverHash
+    }
+
+    private func sha256(_ string: String) -> String {
+        let data = Data(string.utf8)
+        var hash = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH))
+        _ = data.withUnsafeBytes { CC_SHA256($0.baseAddress, CC_LONG(data.count), &hash) }
+        return hash.map { String(format: "%02x", $0) }.joined()
+    }
 
     // MARK: - Public API
 
     func uploadRecording(fileURL: URL, completion: @escaping (Result<URL, Error>) -> Void) {
         let key = apiKey
+        guard !key.isEmpty else {
+            completion(.failure(NetworkError.noAPIKey)); return
+        }
 
-        if useServerAI {
-            // Path 1: Server does everything (trusted friend mode)
-            // Sends the trusted access key so the server validates it
+        if isTrustedKey {
+            // Trusted mode: server does STT + LLM + TTS (access key validated server-side)
             fullPipeline(fileURL: fileURL, completion: completion)
-        } else if !key.isEmpty {
-            // Path 2: Three round trips, API key never touches server
-            splitPipeline(fileURL: fileURL, apiKey: key, completion: completion)
         } else {
-            completion(.failure(NetworkError.noAPIKey))
+            // BYOK mode: server does STT + TTS, key goes only to AI provider
+            splitPipeline(fileURL: fileURL, apiKey: key, completion: completion)
         }
     }
 
@@ -71,9 +106,13 @@ final class NetworkManager: NSObject, ObservableObject {
 
         let task = urlSession.uploadTask(with: request, from: body) { data, response, error in
             DispatchQueue.main.async {
-                if let error = error { completion(.failure(error)); return }
+                if let error = error {
+                    completion(.failure(NetworkError.serverError(detail: error.localizedDescription))); return
+                }
                 guard let data = data, let http = response as? HTTPURLResponse, http.statusCode == 200 else {
-                    completion(.failure(NetworkError.serverError)); return
+                    let code = (response as? HTTPURLResponse)?.statusCode
+                    let detail = code.map { "HTTP \($0)" }
+                    completion(.failure(NetworkError.serverError(detail: detail))); return
                 }
                 self.saveAndReturn(data: data, completion: completion)
             }
@@ -130,13 +169,17 @@ final class NetworkManager: NSObject, ObservableObject {
 
         let task = urlSession.uploadTask(with: request, from: body) { data, response, error in
             DispatchQueue.main.async {
-                if let error = error { completion(.failure(error)); return }
+                if let error = error {
+                    completion(.failure(NetworkError.serverError(detail: error.localizedDescription))); return
+                }
                 guard let data = data, let http = response as? HTTPURLResponse, http.statusCode == 200 else {
-                    completion(.failure(NetworkError.serverError)); return
+                    let code = (response as? HTTPURLResponse)?.statusCode
+                    let detail = code.map { "HTTP \($0)" }
+                    completion(.failure(NetworkError.serverError(detail: detail))); return
                 }
                 guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                       let text = json["text"] as? String else {
-                    completion(.failure(NetworkError.serverError)); return
+                    completion(.failure(NetworkError.serverError(detail: "Invalid response"))); return
                 }
                 completion(.success(text))
             }
@@ -160,9 +203,13 @@ final class NetworkManager: NSObject, ObservableObject {
 
         let task = urlSession.dataTask(with: request) { data, response, error in
             DispatchQueue.main.async {
-                if let error = error { completion(.failure(error)); return }
+                if let error = error {
+                    completion(.failure(NetworkError.serverError(detail: error.localizedDescription))); return
+                }
                 guard let data = data, let http = response as? HTTPURLResponse, http.statusCode == 200 else {
-                    completion(.failure(NetworkError.serverError)); return
+                    let code = (response as? HTTPURLResponse)?.statusCode
+                    let detail = code.map { "HTTP \($0)" }
+                    completion(.failure(NetworkError.serverError(detail: detail))); return
                 }
                 self.saveAndReturn(data: data, completion: completion)
             }
@@ -204,7 +251,7 @@ final class NetworkManager: NSObject, ObservableObject {
                       let content = candidates.first?["content"] as? [String: Any],
                       let parts = content["parts"] as? [[String: Any]],
                       let responseText = parts.first?["text"] as? String else {
-                    completion(.failure(NetworkError.llmError)); return
+                    completion(.failure(NetworkError.llmError(detail: nil))); return
                 }
                 completion(.success(responseText.trimmingCharacters(in: .whitespacesAndNewlines)))
             }
@@ -239,7 +286,7 @@ final class NetworkManager: NSObject, ObservableObject {
                       let choices = json["choices"] as? [[String: Any]],
                       let message = choices.first?["message"] as? [String: Any],
                       let responseText = message["content"] as? String else {
-                    completion(.failure(NetworkError.llmError)); return
+                    completion(.failure(NetworkError.llmError(detail: nil))); return
                 }
                 completion(.success(responseText.trimmingCharacters(in: .whitespacesAndNewlines)))
             }
@@ -273,7 +320,7 @@ final class NetworkManager: NSObject, ObservableObject {
                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                       let content = json["content"] as? [[String: Any]],
                       let responseText = content.first?["text"] as? String else {
-                    completion(.failure(NetworkError.llmError)); return
+                    completion(.failure(NetworkError.llmError(detail: nil))); return
                 }
                 completion(.success(responseText.trimmingCharacters(in: .whitespacesAndNewlines)))
             }
@@ -297,19 +344,23 @@ final class NetworkManager: NSObject, ObservableObject {
     enum NetworkError: LocalizedError {
         case invalidURL
         case fileReadFailed
-        case serverError
+        case serverError(detail: String?)
         case noAPIKey
         case emptyTranscription
-        case llmError
+        case llmError(detail: String?)
 
         var errorDescription: String? {
             switch self {
             case .invalidURL: return "Set your server URL in Settings"
             case .fileReadFailed: return "Could not read recording file"
-            case .serverError: return "Server returned an error"
+            case .serverError(let detail):
+                if let detail = detail { return "Server error: \(detail)" }
+                return "Could not reach server. Check your server URL in Settings."
             case .noAPIKey: return "Set your API key in Settings"
-            case .emptyTranscription: return "Could not understand audio"
-            case .llmError: return "AI provider returned an error"
+            case .emptyTranscription: return "Could not understand audio. Try speaking louder or closer."
+            case .llmError(let detail):
+                if let detail = detail { return "AI error: \(detail)" }
+                return "AI provider returned an error. Check your API key in Settings."
             }
         }
     }

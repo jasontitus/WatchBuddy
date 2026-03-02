@@ -16,52 +16,64 @@ struct ContentView: View {
     @StateObject private var network = NetworkManager()
     @StateObject private var session = SessionManager()
 
+    @AppStorage("server_url") private var serverURL = "https://bell-elliptic-adella.ngrok-free.dev"
+
     @State private var appState: AppState = .idle
     @State private var responseURL: URL?
     @State private var errorMessage: String?
+
+    private var isConfigured: Bool {
+        let hasServer = !serverURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let hasKey = KeychainManager.load(key: "api_key") != nil
+        return hasServer && hasKey
+    }
 
     var body: some View {
         NavigationStack {
         VStack(spacing: 16) {
             Spacer()
 
-            switch appState {
-            case .idle:
-                recordButton
+            if !isConfigured && appState == .idle {
+                setupNeededView
+            } else {
+                switch appState {
+                case .idle:
+                    recordButton
 
-            case .recording:
-                stopButton
-                Text("Listening...")
-                    .font(.footnote)
-                    .foregroundColor(.gray)
+                case .recording:
+                    stopButton
+                    Text("Listening...")
+                        .font(.footnote)
+                        .foregroundColor(.gray)
 
-            case .processing:
-                ProgressView()
-                    .tint(.blue)
-                Text("Processing...")
-                    .font(.footnote)
-                    .foregroundColor(.gray)
+                case .processing:
+                    ProgressView()
+                        .tint(.blue)
+                    Text("Processing...")
+                        .font(.footnote)
+                        .foregroundColor(.gray)
 
-            case .ready:
-                playButton
-                resetButton
+                case .ready:
+                    playButton
+                    resetButton
 
-            case .playing:
-                ProgressView()
-                    .tint(.green)
-                Text("Playing...")
-                    .font(.footnote)
-                    .foregroundColor(.gray)
+                case .playing:
+                    ProgressView()
+                        .tint(.green)
+                    Text("Playing...")
+                        .font(.footnote)
+                        .foregroundColor(.gray)
 
-            case .error:
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.title2)
-                    .foregroundColor(.red)
-                Text(errorMessage ?? "Something went wrong")
-                    .font(.footnote)
-                    .foregroundColor(.gray)
-                    .multilineTextAlignment(.center)
-                resetButton
+                case .error:
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.title2)
+                        .foregroundColor(.red)
+                    Text(errorMessage ?? "Something went wrong")
+                        .font(.footnote)
+                        .foregroundColor(.gray)
+                        .multilineTextAlignment(.center)
+                    resetButton
+                }
             }
 
             Spacer()
@@ -73,12 +85,35 @@ struct ContentView: View {
                 }
             }
         }
+        .onAppear { network.fetchAccessKeyHash() }
         .onChange(of: player.isPlaying) { playing in
             if !playing && appState == .playing {
                 appState = .ready
             }
         }
         } // NavigationStack
+    }
+
+    // MARK: - Setup needed
+
+    private var setupNeededView: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "gear.badge")
+                .font(.title2)
+                .foregroundColor(.orange)
+            Text("Setup Required")
+                .font(.footnote)
+                .bold()
+            Text("Set your server URL and API key in Settings to get started.")
+                .font(.caption2)
+                .foregroundColor(.gray)
+                .multilineTextAlignment(.center)
+            NavigationLink(destination: SettingsView()) {
+                Text("Open Settings")
+                    .font(.footnote)
+            }
+            .buttonStyle(.borderedProminent)
+        }
     }
 
     // MARK: - Buttons

@@ -12,3 +12,6 @@ xcuserdata/
 
 # Screenshots (local only)
 screenshots/
+
+# Environment / secrets
+.env
