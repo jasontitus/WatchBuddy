@@ -10,7 +10,7 @@ final class AudioPlayerManager: NSObject, ObservableObject {
     func play(url: URL) {
         let session = AVAudioSession.sharedInstance()
         do {
-            try session.setCategory(.playAndRecord, mode: .default)
+            try session.setCategory(.playback, mode: .default)
             try session.setActive(true)
         } catch {
             print("[AudioPlayer] Failed to configure audio session: \(error)")

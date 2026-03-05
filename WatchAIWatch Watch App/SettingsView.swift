@@ -27,15 +27,14 @@ struct SettingsView: View {
             Section("API Key") {
                 SecureField("Paste key", text: $apiKey)
                     .autocorrectionDisabled()
-                Button("Save Key") {
-                    KeychainManager.save(key: "api_key", value: apiKey)
-                    apiKey = ""
-                    saved = true
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                        saved = false
+                    .onChange(of: apiKey) {
+                        guard !apiKey.isEmpty else { return }
+                        KeychainManager.save(key: "api_key", value: apiKey)
+                        saved = true
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                            saved = false
+                        }
                     }
-                }
-                .disabled(apiKey.isEmpty)
                 if saved {
                     Text("Key saved")
                         .font(.footnote)
