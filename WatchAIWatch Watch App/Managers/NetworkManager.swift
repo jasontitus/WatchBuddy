@@ -227,11 +227,29 @@ final class NetworkManager: NSObject, ObservableObject {
 
     // MARK: - Direct LLM calls (key stays on watch)
 
-    private func callLLM(text: String, provider: String, apiKey: String, completion: @escaping (Result<String, Error>) -> Void) {
-        switch provider {
-        case "openai":  callOpenAI(text: text, apiKey: apiKey, completion: completion)
-        case "anthropic": callAnthropic(text: text, apiKey: apiKey, completion: completion)
-        default:        callGemini(text: text, apiKey: apiKey, completion: completion)
+    private func callLLM(text: String, provider: String, apiKey: String, retries: Int = 2, completion: @escaping (Result<String, Error>) -> Void) {
+        let singleCall: (@escaping (Result<String, Error>) -> Void) -> Void = { cb in
+            switch provider {
+            case "openai":  self.callOpenAI(text: text, apiKey: apiKey, completion: cb)
+            case "anthropic": self.callAnthropic(text: text, apiKey: apiKey, completion: cb)
+            default:        self.callGemini(text: text, apiKey: apiKey, completion: cb)
+            }
+        }
+
+        singleCall { result in
+            switch result {
+            case .success:
+                completion(result)
+            case .failure(let error):
+                if retries > 0 {
+                    print("[LLM] Retry (\(retries) left) after error: \(error.localizedDescription)")
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                        self.callLLM(text: text, provider: provider, apiKey: apiKey, retries: retries - 1, completion: completion)
+                    }
+                } else {
+                    completion(.failure(error))
+                }
+            }
         }
     }
 
