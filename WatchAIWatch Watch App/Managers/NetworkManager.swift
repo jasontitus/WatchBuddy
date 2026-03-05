@@ -2,6 +2,11 @@ import CommonCrypto
 import Combine
 import Foundation
 
+struct VoiceResponse {
+    let audioURL: URL
+    let text: String
+}
+
 final class NetworkManager: NSObject, ObservableObject {
 
     private let urlSession: URLSession = {
@@ -66,24 +71,22 @@ final class NetworkManager: NSObject, ObservableObject {
 
     // MARK: - Public API
 
-    func uploadRecording(fileURL: URL, completion: @escaping (Result<URL, Error>) -> Void) {
+    func uploadRecording(fileURL: URL, completion: @escaping (Result<VoiceResponse, Error>) -> Void) {
         let key = apiKey
         guard !key.isEmpty else {
             completion(.failure(NetworkError.noAPIKey)); return
         }
 
         if isTrustedKey {
-            // Trusted mode: server does STT + LLM + TTS (access key validated server-side)
             fullPipeline(fileURL: fileURL, completion: completion)
         } else {
-            // BYOK mode: server does STT + TTS, key goes only to AI provider
             splitPipeline(fileURL: fileURL, apiKey: key, completion: completion)
         }
     }
 
     // MARK: - Path 1: Full pipeline (trusted friend)
 
-    private func fullPipeline(fileURL: URL, completion: @escaping (Result<URL, Error>) -> Void) {
+    private func fullPipeline(fileURL: URL, completion: @escaping (Result<VoiceResponse, Error>) -> Void) {
         guard let endpoint = URL(string: "\(serverURL)/v1/chat") else {
             completion(.failure(NetworkError.invalidURL))
             return
@@ -100,7 +103,6 @@ final class NetworkManager: NSObject, ObservableObject {
         }
 
         var body = Data()
-        // Send the trusted access key so server validates and uses its own AI key
         body.appendFormField(boundary: boundary, name: "api_key", value: apiKey)
         body.appendFormFile(boundary: boundary, name: "file", filename: fileURL.lastPathComponent, contentType: "audio/mp4", data: fileData)
         body.append("--\(boundary)--\r\n".data(using: .utf8)!)
@@ -115,7 +117,8 @@ final class NetworkManager: NSObject, ObservableObject {
                     let detail = code.map { "HTTP \($0)" }
                     completion(.failure(NetworkError.serverError(detail: detail))); return
                 }
-                self.saveAndReturn(data: data, completion: completion)
+                let responseText = (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "X-Response-Text") ?? ""
+                self.saveAndReturn(data: data, text: responseText, completion: completion)
             }
         }
         task.resume()
@@ -123,8 +126,7 @@ final class NetworkManager: NSObject, ObservableObject {
 
     // MARK: - Path 2: Split pipeline (BYOK - key never touches server)
 
-    private func splitPipeline(fileURL: URL, apiKey: String, completion: @escaping (Result<URL, Error>) -> Void) {
-        // Step 1: STT on server
+    private func splitPipeline(fileURL: URL, apiKey: String, completion: @escaping (Result<VoiceResponse, Error>) -> Void) {
         callSTT(fileURL: fileURL) { [weak self] result in
             guard let self = self else { return }
             switch result {
@@ -134,14 +136,19 @@ final class NetworkManager: NSObject, ObservableObject {
                 if text.trimmingCharacters(in: .whitespaces).isEmpty {
                     completion(.failure(NetworkError.emptyTranscription)); return
                 }
-                // Step 2: LLM directly from watch (key stays on device)
                 self.callLLM(text: text, provider: self.aiProvider, apiKey: apiKey) { llmResult in
                     switch llmResult {
                     case .failure(let error):
                         completion(.failure(error))
                     case .success(let responseText):
-                        // Step 3: TTS on server
-                        self.callTTS(text: responseText, completion: completion)
+                        self.callTTS(text: responseText) { ttsResult in
+                            switch ttsResult {
+                            case .failure(let error):
+                                completion(.failure(error))
+                            case .success(let audioURL):
+                                completion(.success(VoiceResponse(audioURL: audioURL, text: responseText)))
+                            }
+                        }
                     }
                 }
             }
@@ -212,7 +219,7 @@ final class NetworkManager: NSObject, ObservableObject {
                     let detail = code.map { "HTTP \($0)" }
                     completion(.failure(NetworkError.serverError(detail: detail))); return
                 }
-                self.saveAndReturn(data: data, completion: completion)
+                self.saveAudioAndReturn(data: data, completion: completion)
             }
         }
         task.resume()
@@ -331,7 +338,18 @@ final class NetworkManager: NSObject, ObservableObject {
 
     // MARK: - Helpers
 
-    private func saveAndReturn(data: Data, completion: @escaping (Result<URL, Error>) -> Void) {
+    private func saveAndReturn(data: Data, text: String, completion: @escaping (Result<VoiceResponse, Error>) -> Void) {
+        let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let responseFile = documentsDir.appendingPathComponent("response.mp3")
+        do {
+            try data.write(to: responseFile)
+            completion(.success(VoiceResponse(audioURL: responseFile, text: text)))
+        } catch {
+            completion(.failure(error))
+        }
+    }
+
+    private func saveAudioAndReturn(data: Data, completion: @escaping (Result<URL, Error>) -> Void) {
         let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
         let responseFile = documentsDir.appendingPathComponent("response.mp3")
         do {

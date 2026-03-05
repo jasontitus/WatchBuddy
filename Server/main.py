@@ -157,7 +157,10 @@ async def chat(file: UploadFile = File(...), api_key: str = Form(...)):
     return StreamingResponse(
         io.BytesIO(mp3_bytes),
         media_type="audio/mpeg",
-        headers={"Content-Disposition": "attachment; filename=response.mp3"},
+        headers={
+            "Content-Disposition": "attachment; filename=response.mp3",
+            "X-Response-Text": assistant_text,
+        },
     )
 
 
