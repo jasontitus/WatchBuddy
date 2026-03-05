@@ -8,6 +8,7 @@ final class NetworkManager: NSObject, ObservableObject {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 30
         config.timeoutIntervalForResource = 90
+        config.httpAdditionalHeaders = ["ngrok-skip-browser-warning": "true"]
         return URLSession(configuration: config)
     }()
 
