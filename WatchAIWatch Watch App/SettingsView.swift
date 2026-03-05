@@ -8,6 +8,12 @@ struct SettingsView: View {
 
     private let providers = ["gemini", "openai", "anthropic"]
 
+    private var versionString: String {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
+        return "v\(version) (\(build))"
+    }
+
     var body: some View {
         Form {
             Section("Server") {
@@ -53,6 +59,9 @@ struct SettingsView: View {
             Section {
                 Link("Privacy Policy", destination: URL(string: "https://jasontitus.github.io/WatchBuddy/privacy.html")!)
                     .font(.footnote)
+                Text(versionString)
+                    .font(.footnote)
+                    .foregroundColor(.gray)
             }
         }
         .navigationTitle("Settings")

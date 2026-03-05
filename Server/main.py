@@ -99,6 +99,11 @@ def synthesize_speech(text: str) -> bytes:
 
     audio = np.concatenate(all_audio)
 
+    # Normalize and boost volume
+    peak = np.abs(audio).max()
+    if peak > 0:
+        audio = audio / peak * 0.95
+
     # Convert float32 numpy array to MP3 via ffmpeg
     pcm_bytes = (audio * 32767).astype(np.int16).tobytes()
 

@@ -1,13 +1,14 @@
 import AVFoundation
 import Combine
 
-final class AudioPlayerManager: NSObject, ObservableObject {
+final class AudioPlayerManager: NSObject, ObservableObject, AVAudioPlayerDelegate {
     @Published var isPlaying = false
 
-    private var player: AVPlayer?
-    private var playerObserver: Any?
+    private var audioPlayer: AVAudioPlayer?
 
     func play(url: URL) {
+        stop()
+
         let session = AVAudioSession.sharedInstance()
         do {
             try session.setCategory(.playback, mode: .default)
@@ -17,28 +18,28 @@ final class AudioPlayerManager: NSObject, ObservableObject {
             return
         }
 
-        let playerItem = AVPlayerItem(url: url)
-        player = AVPlayer(playerItem: playerItem)
-
-        playerObserver = NotificationCenter.default.addObserver(
-            forName: .AVPlayerItemDidPlayToEndTime,
-            object: playerItem,
-            queue: .main
-        ) { [weak self] _ in
-            self?.isPlaying = false
+        do {
+            audioPlayer = try AVAudioPlayer(contentsOf: url)
+            audioPlayer?.delegate = self
+            audioPlayer?.play()
+            isPlaying = true
+        } catch {
+            print("[AudioPlayer] Failed to play: \(error)")
+            isPlaying = false
         }
-
-        isPlaying = true
-        player?.play()
     }
 
     func stop() {
-        player?.pause()
-        player = nil
-        if let observer = playerObserver {
-            NotificationCenter.default.removeObserver(observer)
-            playerObserver = nil
-        }
+        audioPlayer?.stop()
+        audioPlayer = nil
         isPlaying = false
+    }
+
+    // MARK: - AVAudioPlayerDelegate
+
+    func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        DispatchQueue.main.async {
+            self.isPlaying = false
+        }
     }
 }

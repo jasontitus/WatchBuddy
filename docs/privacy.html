@@ -18,53 +18,98 @@
         h3 { font-size: 1em; margin-top: 1em; }
         p, ul { font-size: 0.95em; }
         a { color: #0066cc; }
+        table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; font-size: 0.9em; }
+        th { background-color: #f5f5f5; }
     </style>
 </head>
 <body>
     <h1>WatchBuddy Privacy Policy</h1>
-    <p><strong>Last updated:</strong> February 25, 2026</p>
+    <p><strong>Last updated:</strong> March 1, 2026</p>
 
     <h2>Overview</h2>
-    <p>WatchBuddy is a voice assistant app for Apple Watch. Your privacy matters to us, so we designed the app to minimize the data it handles. This policy explains exactly what data leaves your device and where it goes.</p>
+    <p>WatchBuddy is a voice assistant app for Apple Watch. Your privacy matters to us, so we designed the app to minimize the data it handles. This policy explains exactly what data leaves your device, how it is collected, where it goes, and who receives it.</p>
 
-    <h2>Data We Collect</h2>
-    <p>WatchBuddy does <strong>not</strong> collect, store, or share any personal data. Specifically:</p>
+    <h2>What Data We Collect and How</h2>
+    <p>WatchBuddy collects the following data during normal use:</p>
+
+    <table>
+        <tr>
+            <th>Data</th>
+            <th>How Collected</th>
+            <th>Purpose</th>
+            <th>Sent To</th>
+        </tr>
+        <tr>
+            <td>Voice audio recording</td>
+            <td>Captured via the Apple Watch microphone when you tap the record button</td>
+            <td>Converted to text (speech-to-text)</td>
+            <td>Your configured speech server, or a third-party AI provider in Server AI mode</td>
+        </tr>
+        <tr>
+            <td>Transcribed text</td>
+            <td>Returned from the speech-to-text server</td>
+            <td>Sent to an AI service to generate a conversational response</td>
+            <td>One of: Google Gemini (Google LLC), OpenAI (OpenAI, Inc.), or Anthropic (Anthropic, PBC)</td>
+        </tr>
+        <tr>
+            <td>AI response text</td>
+            <td>Returned from the AI service</td>
+            <td>Converted to spoken audio (text-to-speech)</td>
+            <td>Your configured speech server</td>
+        </tr>
+        <tr>
+            <td>API key / access key</td>
+            <td>Entered by you in Settings</td>
+            <td>Authenticate with the AI provider or speech server</td>
+            <td>The AI provider you selected (BYOK mode) or your speech server (Server AI mode)</td>
+        </tr>
+    </table>
+
+    <h2>What We Do NOT Collect</h2>
     <ul>
         <li>We do not use analytics, tracking, or advertising frameworks.</li>
         <li>We do not collect device identifiers, usage statistics, or location data.</li>
-        <li>Your API key is stored securely in the device Keychain and is never sent anywhere except the services described below.</li>
+        <li>We do not store recordings, transcriptions, or AI responses. All data is processed in real time and discarded immediately after use.</li>
     </ul>
 
-    <h2>Third-Party Services</h2>
-    <p>WatchBuddy operates in two modes. In both modes, data is processed in real time and is <strong>not stored</strong> by the app.</p>
+    <h2>Third-Party Data Sharing</h2>
+    <p>WatchBuddy shares your data with the following third-party services depending on your configuration. The app asks for your explicit consent before any data is shared.</p>
+
+    <h3>Speech Processing Server</h3>
+    <p>You configure a speech server URL in Settings. This server receives:</p>
+    <ul>
+        <li>Your voice audio recording (for speech-to-text conversion)</li>
+        <li>AI response text (for text-to-speech conversion)</li>
+        <li>In Server AI mode: your access key for authentication</li>
+    </ul>
+    <p>The server processes data in real time. WatchBuddy does not control third-party servers you configure.</p>
+
+    <h3>AI Providers</h3>
+    <p>Depending on your settings, your transcribed text is sent to one of the following third-party AI providers to generate a response:</p>
+    <ul>
+        <li><strong>Google Gemini</strong> (Google LLC) &ndash; receives your transcribed text and API key. <a href="https://policies.google.com/privacy">Google Privacy Policy</a></li>
+        <li><strong>OpenAI</strong> (OpenAI, Inc.) &ndash; receives your transcribed text and API key. <a href="https://openai.com/privacy">OpenAI Privacy Policy</a></li>
+        <li><strong>Anthropic</strong> (Anthropic, PBC) &ndash; receives your transcribed text and API key. <a href="https://www.anthropic.com/privacy">Anthropic Privacy Policy</a></li>
+    </ul>
+    <p>Each provider processes data according to their own privacy policy, which provides the same or equivalent protection of your data. We encourage you to review the policy for the provider you choose.</p>
 
     <h3>Server AI Mode</h3>
-    <p>When "Use Server's AI" is enabled:</p>
-    <ul>
-        <li>Your voice recording and access key are sent to the server you configure in Settings.</li>
-        <li>The server handles speech-to-text, AI processing, and text-to-speech entirely on its side.</li>
-        <li>No data is sent directly from your watch to any AI provider.</li>
-    </ul>
+    <p>When "Use Server's AI" is enabled, your voice recording and access key are sent to the server you configure. The server handles all AI processing on its side. No data is sent directly from your watch to any AI provider in this mode.</p>
 
     <h3>Bring Your Own Key (BYOK) Mode</h3>
     <p>When "Use Server's AI" is disabled:</p>
     <ul>
-        <li>Your voice recording is sent to the server you configure for speech-to-text conversion only.</li>
+        <li>Your voice recording is sent to your configured server for speech-to-text only (no API key is sent to the server).</li>
         <li>The transcribed text is sent directly from your watch to the AI provider you selected, along with your API key.</li>
-        <li>The AI response text is sent back to the server for text-to-speech conversion.</li>
+        <li>The AI response text is sent back to your server for text-to-speech conversion.</li>
     </ul>
 
-    <h3>AI Providers</h3>
-    <p>Depending on your settings, your transcribed text may be sent to one of the following third-party AI providers:</p>
-    <ul>
-        <li><strong>Google Gemini</strong> – <a href="https://policies.google.com/privacy">Privacy Policy</a></li>
-        <li><strong>OpenAI</strong> – <a href="https://openai.com/privacy">Privacy Policy</a></li>
-        <li><strong>Anthropic</strong> – <a href="https://www.anthropic.com/privacy">Privacy Policy</a></li>
-    </ul>
-    <p>Each provider processes data according to their own privacy policy. We encourage you to review the policy for the provider you choose.</p>
+    <h2>User Consent</h2>
+    <p>WatchBuddy displays a detailed privacy disclosure screen on first launch that describes what data is shared and with whom. You must explicitly agree before the app will send any data. You can review this privacy policy at any time from the Settings screen within the app.</p>
 
     <h2>Data Storage</h2>
-    <p>All settings (server URL and AI provider preference) are stored locally on your device using standard watchOS storage. Your API key is stored in the Apple Keychain, which is encrypted and protected by the operating system.</p>
+    <p>All settings (server URL and AI provider preference) are stored locally on your device using standard watchOS storage. Your API key is stored in the Apple Keychain, which is encrypted and protected by the operating system. No data is stored on external servers by the app.</p>
 
     <h2>Children's Privacy</h2>
     <p>WatchBuddy does not knowingly collect information from children under 13.</p>
