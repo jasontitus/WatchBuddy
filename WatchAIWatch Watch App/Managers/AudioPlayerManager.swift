@@ -7,6 +7,16 @@ final class AudioPlayerManager: NSObject, ObservableObject, AVAudioPlayerDelegat
 
     private var audioPlayer: AVAudioPlayer?
 
+    override init() {
+        super.init()
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleInterruption),
+            name: AVAudioSession.interruptionNotification,
+            object: nil
+        )
+    }
+
     func play(url: URL) {
         stop()
         lastError = nil
@@ -46,6 +56,20 @@ final class AudioPlayerManager: NSObject, ObservableObject, AVAudioPlayerDelegat
             self.isPlaying = false
             if !flag {
                 self.lastError = "Playback finished unsuccessfully"
+            }
+        }
+    }
+
+    // MARK: - Audio interruption (e.g. app backgrounded)
+
+    @objc private func handleInterruption(_ notification: Notification) {
+        guard let info = notification.userInfo,
+              let typeValue = info[AVAudioSessionInterruptionTypeKey] as? UInt,
+              let type = AVAudioSession.InterruptionType(rawValue: typeValue) else { return }
+
+        if type == .began {
+            DispatchQueue.main.async {
+                self.isPlaying = false
             }
         }
     }

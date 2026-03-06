@@ -59,6 +59,7 @@ struct ContentView: View {
                     Text("Processing...")
                         .font(.footnote)
                         .foregroundColor(.gray)
+                    cancelButton
                     Spacer()
 
                 case .playing:
@@ -68,6 +69,7 @@ struct ContentView: View {
                     Text("Playing...")
                         .font(.footnote)
                         .foregroundColor(.gray)
+                    cancelButton
                     Spacer()
 
                 case .done:
@@ -214,6 +216,19 @@ struct ContentView: View {
                 .background(Circle().fill(Color.red))
         }
         .buttonStyle(.plain)
+    }
+
+    private var cancelButton: some View {
+        Button("Cancel") {
+            player.stop()
+            session.endSession()
+            responseURL = nil
+            responseText = nil
+            questionText = nil
+            appState = .idle
+        }
+        .font(.footnote)
+        .foregroundColor(.red)
     }
 
     private var newRecordingButton: some View {
