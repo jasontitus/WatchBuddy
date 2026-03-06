@@ -1,8 +1,10 @@
 import hashlib
 import io
+import logging
 import os
 import tempfile
 import subprocess
+import time
 
 import numpy as np
 from dotenv import load_dotenv
@@ -15,6 +17,15 @@ from google.genai import types
 from kokoro import KPipeline
 
 load_dotenv()
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger("watchai")
+
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
 
 app = FastAPI(title="WatchAI Voice Server")
 
@@ -132,64 +143,93 @@ async def chat(file: UploadFile = File(...), api_key: str = Form(...)):
     if not ACCESS_KEY or api_key != ACCESS_KEY:
         return JSONResponse(status_code=401, content={"error": "Invalid access key"})
 
-    input_bytes = await file.read()
-    print(f"[Chat] Received {len(input_bytes)} bytes: {file.filename}")
+    try:
+        input_bytes = await file.read()
+        if not input_bytes:
+            return JSONResponse(status_code=400, content={"error": "Empty audio file"})
+        if len(input_bytes) > MAX_UPLOAD_BYTES:
+            return JSONResponse(status_code=400, content={"error": f"File too large ({len(input_bytes)} bytes). Max {MAX_UPLOAD_BYTES} bytes."})
+        logger.info(f"[Chat] Received {len(input_bytes)} bytes: {file.filename}")
 
-    wav_bytes = transcode_to_wav(input_bytes)
-    print(f"[Transcode] WAV size: {len(wav_bytes)} bytes")
+        t0 = time.time()
+        wav_bytes = transcode_to_wav(input_bytes)
+        logger.info(f"[Transcode] WAV size: {len(wav_bytes)} bytes ({time.time() - t0:.2f}s)")
 
-    user_text = transcribe(wav_bytes)
-    print(f"[STT] Transcription: {user_text}")
+        t0 = time.time()
+        user_text = transcribe(wav_bytes)
+        logger.info(f"[STT] Transcribed {len(user_text.split())} words ({time.time() - t0:.2f}s)")
 
-    if not user_text.strip():
+        if not user_text.strip():
+            return StreamingResponse(
+                io.BytesIO(b""),
+                media_type="audio/mpeg",
+                status_code=200,
+            )
+
+        t0 = time.time()
+        assistant_text = ask_gemini(user_text)
+        logger.info(f"[LLM] Response {len(assistant_text)} chars ({time.time() - t0:.2f}s)")
+
+        t0 = time.time()
+        mp3_bytes = synthesize_speech(assistant_text)
+        logger.info(f"[TTS] MP3 size: {len(mp3_bytes)} bytes ({time.time() - t0:.2f}s)")
+
         return StreamingResponse(
-            io.BytesIO(b""),
+            io.BytesIO(mp3_bytes),
             media_type="audio/mpeg",
-            status_code=200,
+            headers={
+                "Content-Disposition": "attachment; filename=response.mp3",
+                "X-Response-Text": assistant_text,
+            },
         )
-
-    assistant_text = ask_gemini(user_text)
-    print(f"[LLM] Response: {assistant_text}")
-
-    mp3_bytes = synthesize_speech(assistant_text)
-    print(f"[TTS] MP3 size: {len(mp3_bytes)} bytes")
-
-    return StreamingResponse(
-        io.BytesIO(mp3_bytes),
-        media_type="audio/mpeg",
-        headers={
-            "Content-Disposition": "attachment; filename=response.mp3",
-            "X-Response-Text": assistant_text,
-        },
-    )
+    except Exception as e:
+        logger.exception("[Chat] Pipeline failed")
+        return JSONResponse(status_code=500, content={"error": f"Chat pipeline failed: {type(e).__name__}"})
 
 
 @app.post("/v1/stt")
 async def stt(file: UploadFile = File(...)):
     """Speech-to-text only. No auth required (BYOK mode)."""
-    input_bytes = await file.read()
-    print(f"[STT] Received {len(input_bytes)} bytes: {file.filename}")
+    try:
+        input_bytes = await file.read()
+        if not input_bytes:
+            return JSONResponse(status_code=400, content={"error": "Empty audio file"})
+        if len(input_bytes) > MAX_UPLOAD_BYTES:
+            return JSONResponse(status_code=400, content={"error": f"File too large ({len(input_bytes)} bytes). Max {MAX_UPLOAD_BYTES} bytes."})
+        logger.info(f"[STT] Received {len(input_bytes)} bytes: {file.filename}")
 
-    wav_bytes = transcode_to_wav(input_bytes)
-    user_text = transcribe(wav_bytes)
-    print(f"[STT] Transcription: {user_text}")
+        t0 = time.time()
+        wav_bytes = transcode_to_wav(input_bytes)
+        logger.info(f"[Transcode] WAV size: {len(wav_bytes)} bytes ({time.time() - t0:.2f}s)")
 
-    return {"text": user_text}
+        t0 = time.time()
+        user_text = transcribe(wav_bytes)
+        logger.info(f"[STT] Transcribed {len(user_text.split())} words ({time.time() - t0:.2f}s)")
+
+        return {"text": user_text}
+    except Exception as e:
+        logger.exception("[STT] Pipeline failed")
+        return JSONResponse(status_code=500, content={"error": f"STT failed: {type(e).__name__}"})
 
 
 @app.post("/v1/tts")
 async def tts(req: TTSRequest):
     """Text-to-speech only. No auth required (BYOK mode)."""
-    print(f"[TTS] Synthesizing: {req.text[:80]}...")
+    try:
+        logger.info(f"[TTS] Synthesizing {len(req.text)} chars...")
 
-    mp3_bytes = synthesize_speech(req.text)
-    print(f"[TTS] MP3 size: {len(mp3_bytes)} bytes")
+        t0 = time.time()
+        mp3_bytes = synthesize_speech(req.text)
+        logger.info(f"[TTS] MP3 size: {len(mp3_bytes)} bytes ({time.time() - t0:.2f}s)")
 
-    return StreamingResponse(
-        io.BytesIO(mp3_bytes),
-        media_type="audio/mpeg",
-        headers={"Content-Disposition": "attachment; filename=response.mp3"},
-    )
+        return StreamingResponse(
+            io.BytesIO(mp3_bytes),
+            media_type="audio/mpeg",
+            headers={"Content-Disposition": "attachment; filename=response.mp3"},
+        )
+    except Exception as e:
+        logger.exception("[TTS] Pipeline failed")
+        return JSONResponse(status_code=500, content={"error": f"TTS failed: {type(e).__name__}"})
 
 
 @app.get("/health")

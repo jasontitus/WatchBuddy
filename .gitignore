@@ -13,5 +13,15 @@ xcuserdata/
 # Screenshots (local only)
 screenshots/
 
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# Audio artifacts
+*.mp3
+*.m4a
+*.wav
+
 # Environment / secrets
 .env

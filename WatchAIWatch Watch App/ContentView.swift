@@ -95,7 +95,24 @@ struct ContentView: View {
         .onAppear { network.fetchAccessKeyHash() }
         .onChange(of: player.isPlaying) { playing in
             if !playing && appState == .playing {
-                appState = .done
+                if let err = player.lastError {
+                    errorMessage = err
+                    appState = .error
+                } else {
+                    appState = .done
+                }
+            }
+        }
+        .onChange(of: player.lastError) { err in
+            if let err = err, appState == .playing {
+                errorMessage = err
+                appState = .error
+            }
+        }
+        .onChange(of: recorder.lastError) { err in
+            if let err = err, appState == .recording {
+                errorMessage = err
+                appState = .error
             }
         }
         .onChange(of: scenePhase) { phase in

@@ -3,17 +3,21 @@ import Combine
 
 final class AudioRecorderManager: NSObject, ObservableObject {
     @Published var isRecording = false
+    @Published var lastError: String?
 
     private var recorder: AVAudioRecorder?
     private(set) var recordingURL: URL?
 
     func startRecording() {
+        lastError = nil
+
         let session = AVAudioSession.sharedInstance()
         do {
             try session.setCategory(.playAndRecord, mode: .default)
             try session.setActive(true)
         } catch {
             print("[AudioRecorder] Failed to configure audio session: \(error)")
+            lastError = "Mic session error: \(error.localizedDescription)"
             return
         }
 
@@ -35,6 +39,7 @@ final class AudioRecorderManager: NSObject, ObservableObject {
             isRecording = true
         } catch {
             print("[AudioRecorder] Failed to start recording: \(error)")
+            lastError = "Recording error: \(error.localizedDescription)"
         }
     }
 
