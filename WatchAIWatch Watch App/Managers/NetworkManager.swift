@@ -77,10 +77,18 @@ final class NetworkManager: NSObject, ObservableObject {
             completion(.failure(NetworkError.noAPIKey)); return
         }
 
-        if isTrustedKey {
-            fullPipeline(fileURL: fileURL, completion: completion)
+        let proceed = {
+            if self.isTrustedKey {
+                self.fullPipeline(fileURL: fileURL, completion: completion)
+            } else {
+                self.splitPipeline(fileURL: fileURL, apiKey: key, completion: completion)
+            }
+        }
+
+        if cachedAccessKeyHash == nil {
+            fetchAccessKeyHash { _ in proceed() }
         } else {
-            splitPipeline(fileURL: fileURL, apiKey: key, completion: completion)
+            proceed()
         }
     }
 
