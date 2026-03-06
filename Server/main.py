@@ -1,5 +1,6 @@
 import hashlib
 import io
+import json
 import logging
 import os
 import tempfile
@@ -87,11 +88,18 @@ def transcribe(wav_bytes: bytes) -> str:
         os.unlink(tmp_path)
 
 
-def ask_gemini(text: str) -> str:
-    """Get a concise response from Gemini."""
+def ask_gemini(text: str, history: list | None = None) -> str:
+    """Get a concise response from Gemini, optionally with conversation history."""
+    contents = []
+    if history:
+        for msg in history:
+            role = "model" if msg.get("role") == "assistant" else "user"
+            contents.append({"role": role, "parts": [{"text": msg["content"]}]})
+    contents.append({"role": "user", "parts": [{"text": text}]})
+
     response = gemini_client.models.generate_content(
         model=GEMINI_MODEL,
-        contents=text,
+        contents=contents,
         config=GEMINI_CONFIG,
     )
     return response.text.strip()
@@ -135,10 +143,11 @@ def synthesize_speech(text: str) -> bytes:
 
 
 @app.post("/v1/chat")
-async def chat(file: UploadFile = File(...), api_key: str = Form(...)):
+async def chat(file: UploadFile = File(...), api_key: str = Form(...), context: str = Form("")):
     """
     Full pipeline for trusted users (family/testers).
     Validates the shared access key, then runs STT -> LLM -> TTS.
+    Optional 'context' field: JSON array of [{role, content}] for conversation history.
     """
     if not ACCESS_KEY or api_key != ACCESS_KEY:
         return JSONResponse(status_code=401, content={"error": "Invalid access key"})
@@ -150,6 +159,15 @@ async def chat(file: UploadFile = File(...), api_key: str = Form(...)):
         if len(input_bytes) > MAX_UPLOAD_BYTES:
             return JSONResponse(status_code=400, content={"error": f"File too large ({len(input_bytes)} bytes). Max {MAX_UPLOAD_BYTES} bytes."})
         logger.info(f"[Chat] Received {len(input_bytes)} bytes: {file.filename}")
+
+        # Parse conversation history if provided
+        history = None
+        if context:
+            try:
+                history = json.loads(context)
+                logger.info(f"[Chat] Conversation history: {len(history)} messages")
+            except json.JSONDecodeError:
+                logger.warning("[Chat] Invalid context JSON, ignoring")
 
         t0 = time.time()
         wav_bytes = transcode_to_wav(input_bytes)
@@ -167,7 +185,7 @@ async def chat(file: UploadFile = File(...), api_key: str = Form(...)):
             )
 
         t0 = time.time()
-        assistant_text = ask_gemini(user_text)
+        assistant_text = ask_gemini(user_text, history=history)
         logger.info(f"[LLM] Response {len(assistant_text)} chars ({time.time() - t0:.2f}s)")
 
         t0 = time.time()
@@ -180,6 +198,7 @@ async def chat(file: UploadFile = File(...), api_key: str = Form(...)):
             headers={
                 "Content-Disposition": "attachment; filename=response.mp3",
                 "X-Response-Text": assistant_text,
+                "X-Question-Text": user_text,
             },
         )
     except Exception as e:

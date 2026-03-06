@@ -5,6 +5,7 @@ import Foundation
 struct VoiceResponse {
     let audioURL: URL
     let text: String
+    let questionText: String
 }
 
 final class NetworkManager: NSObject, ObservableObject {
@@ -71,7 +72,7 @@ final class NetworkManager: NSObject, ObservableObject {
 
     // MARK: - Public API
 
-    func uploadRecording(fileURL: URL, completion: @escaping (Result<VoiceResponse, Error>) -> Void) {
+    func uploadRecording(fileURL: URL, history: [(question: String, answer: String)] = [], completion: @escaping (Result<VoiceResponse, Error>) -> Void) {
         let key = apiKey
         guard !key.isEmpty else {
             completion(.failure(NetworkError.noAPIKey)); return
@@ -79,9 +80,9 @@ final class NetworkManager: NSObject, ObservableObject {
 
         let proceed = {
             if self.isTrustedKey {
-                self.fullPipeline(fileURL: fileURL, completion: completion)
+                self.fullPipeline(fileURL: fileURL, history: history, completion: completion)
             } else {
-                self.splitPipeline(fileURL: fileURL, apiKey: key, completion: completion)
+                self.splitPipeline(fileURL: fileURL, apiKey: key, history: history, completion: completion)
             }
         }
 
@@ -94,7 +95,7 @@ final class NetworkManager: NSObject, ObservableObject {
 
     // MARK: - Path 1: Full pipeline (trusted friend)
 
-    private func fullPipeline(fileURL: URL, completion: @escaping (Result<VoiceResponse, Error>) -> Void) {
+    private func fullPipeline(fileURL: URL, history: [(question: String, answer: String)], completion: @escaping (Result<VoiceResponse, Error>) -> Void) {
         guard let endpoint = URL(string: "\(serverURL)/v1/chat") else {
             completion(.failure(NetworkError.invalidURL))
             return
@@ -112,6 +113,20 @@ final class NetworkManager: NSObject, ObservableObject {
 
         var body = Data()
         body.appendFormField(boundary: boundary, name: "api_key", value: apiKey)
+
+        // Send conversation history as JSON context
+        if !history.isEmpty {
+            var contextMessages: [[String: String]] = []
+            for turn in history {
+                contextMessages.append(["role": "user", "content": turn.question])
+                contextMessages.append(["role": "assistant", "content": turn.answer])
+            }
+            if let contextData = try? JSONSerialization.data(withJSONObject: contextMessages),
+               let contextString = String(data: contextData, encoding: .utf8) {
+                body.appendFormField(boundary: boundary, name: "context", value: contextString)
+            }
+        }
+
         body.appendFormFile(boundary: boundary, name: "file", filename: fileURL.lastPathComponent, contentType: "audio/mp4", data: fileData)
         body.append("--\(boundary)--\r\n".data(using: .utf8)!)
 
@@ -125,8 +140,9 @@ final class NetworkManager: NSObject, ObservableObject {
                     let detail = code.map { "HTTP \($0)" }
                     completion(.failure(NetworkError.serverError(detail: detail))); return
                 }
-                let responseText = (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "X-Response-Text") ?? ""
-                self.saveAndReturn(data: data, text: responseText, completion: completion)
+                let responseText = http.value(forHTTPHeaderField: "X-Response-Text") ?? ""
+                let questionText = http.value(forHTTPHeaderField: "X-Question-Text") ?? ""
+                self.saveAndReturn(data: data, text: responseText, questionText: questionText, completion: completion)
             }
         }
         task.resume()
@@ -134,17 +150,17 @@ final class NetworkManager: NSObject, ObservableObject {
 
     // MARK: - Path 2: Split pipeline (BYOK - key never touches server)
 
-    private func splitPipeline(fileURL: URL, apiKey: String, completion: @escaping (Result<VoiceResponse, Error>) -> Void) {
+    private func splitPipeline(fileURL: URL, apiKey: String, history: [(question: String, answer: String)], completion: @escaping (Result<VoiceResponse, Error>) -> Void) {
         callSTT(fileURL: fileURL) { [weak self] result in
             guard let self = self else { return }
             switch result {
             case .failure(let error):
                 completion(.failure(error))
-            case .success(let text):
-                if text.trimmingCharacters(in: .whitespaces).isEmpty {
+            case .success(let questionText):
+                if questionText.trimmingCharacters(in: .whitespaces).isEmpty {
                     completion(.failure(NetworkError.emptyTranscription)); return
                 }
-                self.callLLM(text: text, provider: self.aiProvider, apiKey: apiKey) { llmResult in
+                self.callLLM(text: questionText, provider: self.aiProvider, apiKey: apiKey, history: history) { llmResult in
                     switch llmResult {
                     case .failure(let error):
                         completion(.failure(error))
@@ -154,7 +170,7 @@ final class NetworkManager: NSObject, ObservableObject {
                             case .failure(let error):
                                 completion(.failure(error))
                             case .success(let audioURL):
-                                completion(.success(VoiceResponse(audioURL: audioURL, text: responseText)))
+                                completion(.success(VoiceResponse(audioURL: audioURL, text: responseText, questionText: questionText)))
                             }
                         }
                     }
@@ -235,12 +251,12 @@ final class NetworkManager: NSObject, ObservableObject {
 
     // MARK: - Direct LLM calls (key stays on watch)
 
-    private func callLLM(text: String, provider: String, apiKey: String, retries: Int = 2, completion: @escaping (Result<String, Error>) -> Void) {
+    private func callLLM(text: String, provider: String, apiKey: String, history: [(question: String, answer: String)] = [], retries: Int = 2, completion: @escaping (Result<String, Error>) -> Void) {
         let singleCall: (@escaping (Result<String, Error>) -> Void) -> Void = { cb in
             switch provider {
-            case "openai":  self.callOpenAI(text: text, apiKey: apiKey, completion: cb)
-            case "anthropic": self.callAnthropic(text: text, apiKey: apiKey, completion: cb)
-            default:        self.callGemini(text: text, apiKey: apiKey, completion: cb)
+            case "openai":  self.callOpenAI(text: text, apiKey: apiKey, history: history, completion: cb)
+            case "anthropic": self.callAnthropic(text: text, apiKey: apiKey, history: history, completion: cb)
+            default:        self.callGemini(text: text, apiKey: apiKey, history: history, completion: cb)
             }
         }
 
@@ -252,7 +268,7 @@ final class NetworkManager: NSObject, ObservableObject {
                 if retries > 0 {
                     print("[LLM] Retry (\(retries) left) after error: \(error.localizedDescription)")
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-                        self.callLLM(text: text, provider: provider, apiKey: apiKey, retries: retries - 1, completion: completion)
+                        self.callLLM(text: text, provider: provider, apiKey: apiKey, history: history, retries: retries - 1, completion: completion)
                     }
                 } else {
                     completion(.failure(error))
@@ -261,7 +277,7 @@ final class NetworkManager: NSObject, ObservableObject {
         }
     }
 
-    private func callGemini(text: String, apiKey: String, completion: @escaping (Result<String, Error>) -> Void) {
+    private func callGemini(text: String, apiKey: String, history: [(question: String, answer: String)] = [], completion: @escaping (Result<String, Error>) -> Void) {
         guard let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=\(apiKey)") else {
             completion(.failure(NetworkError.invalidURL)); return
         }
@@ -270,9 +286,16 @@ final class NetworkManager: NSObject, ObservableObject {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
+        var contents: [[String: Any]] = []
+        for turn in history {
+            contents.append(["role": "user", "parts": [["text": turn.question]]])
+            contents.append(["role": "model", "parts": [["text": turn.answer]]])
+        }
+        contents.append(["role": "user", "parts": [["text": text]]])
+
         let body: [String: Any] = [
             "system_instruction": ["parts": [["text": systemPrompt]]],
-            "contents": [["parts": [["text": text]]]]
+            "contents": contents
         ]
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
@@ -293,7 +316,7 @@ final class NetworkManager: NSObject, ObservableObject {
         task.resume()
     }
 
-    private func callOpenAI(text: String, apiKey: String, completion: @escaping (Result<String, Error>) -> Void) {
+    private func callOpenAI(text: String, apiKey: String, history: [(question: String, answer: String)] = [], completion: @escaping (Result<String, Error>) -> Void) {
         guard let url = URL(string: "https://api.openai.com/v1/chat/completions") else {
             completion(.failure(NetworkError.invalidURL)); return
         }
@@ -303,12 +326,16 @@ final class NetworkManager: NSObject, ObservableObject {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
 
+        var messages: [[String: String]] = [["role": "system", "content": systemPrompt]]
+        for turn in history {
+            messages.append(["role": "user", "content": turn.question])
+            messages.append(["role": "assistant", "content": turn.answer])
+        }
+        messages.append(["role": "user", "content": text])
+
         let body: [String: Any] = [
             "model": "gpt-4o-mini",
-            "messages": [
-                ["role": "system", "content": systemPrompt],
-                ["role": "user", "content": text]
-            ]
+            "messages": messages
         ]
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
@@ -328,7 +355,7 @@ final class NetworkManager: NSObject, ObservableObject {
         task.resume()
     }
 
-    private func callAnthropic(text: String, apiKey: String, completion: @escaping (Result<String, Error>) -> Void) {
+    private func callAnthropic(text: String, apiKey: String, history: [(question: String, answer: String)] = [], completion: @escaping (Result<String, Error>) -> Void) {
         guard let url = URL(string: "https://api.anthropic.com/v1/messages") else {
             completion(.failure(NetworkError.invalidURL)); return
         }
@@ -339,11 +366,18 @@ final class NetworkManager: NSObject, ObservableObject {
         request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
         request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
 
+        var messages: [[String: String]] = []
+        for turn in history {
+            messages.append(["role": "user", "content": turn.question])
+            messages.append(["role": "assistant", "content": turn.answer])
+        }
+        messages.append(["role": "user", "content": text])
+
         let body: [String: Any] = [
             "model": "claude-haiku-4-5-20251001",
             "max_tokens": 256,
             "system": systemPrompt,
-            "messages": [["role": "user", "content": text]]
+            "messages": messages
         ]
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
@@ -364,12 +398,12 @@ final class NetworkManager: NSObject, ObservableObject {
 
     // MARK: - Helpers
 
-    private func saveAndReturn(data: Data, text: String, completion: @escaping (Result<VoiceResponse, Error>) -> Void) {
+    private func saveAndReturn(data: Data, text: String, questionText: String, completion: @escaping (Result<VoiceResponse, Error>) -> Void) {
         let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
         let responseFile = documentsDir.appendingPathComponent("response.mp3")
         do {
             try data.write(to: responseFile)
-            completion(.success(VoiceResponse(audioURL: responseFile, text: text)))
+            completion(.success(VoiceResponse(audioURL: responseFile, text: text, questionText: questionText)))
         } catch {
             completion(.failure(error))
         }

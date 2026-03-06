@@ -28,6 +28,7 @@ os.environ.setdefault("ACCESS_KEY", "test-secret-key")
 os.environ.setdefault("GOOGLE_API_KEY", "fake-key")
 
 import io
+import json
 import pytest
 from fastapi.testclient import TestClient
 
@@ -104,6 +105,90 @@ class TestChat:
         assert r.headers["content-type"] == "audio/mpeg"
         assert r.headers["x-response-text"] == "Hello there!"
         assert len(r.content) > 0
+
+    @patch("main.synthesize_speech", return_value=b"\xff\xfb\x90\x00" * 100)
+    @patch("main.ask_gemini", return_value="Hello there!")
+    @patch("main.transcribe", return_value="Hi")
+    @patch("main.transcode_to_wav", return_value=b"RIFF" + b"\x00" * 100)
+    def test_chat_success_returns_question_text_header(self, mock_transcode, mock_stt, mock_llm, mock_tts):
+        r = client.post(
+            "/v1/chat",
+            files={"file": ("test.m4a", io.BytesIO(FAKE_AUDIO), "audio/mp4")},
+            data={"api_key": VALID_KEY},
+        )
+        assert r.status_code == 200
+        assert r.headers["x-question-text"] == "Hi"
+
+    @patch("main.synthesize_speech", return_value=b"\xff\xfb\x90\x00" * 100)
+    @patch("main.ask_gemini", return_value="Paris is the capital.")
+    @patch("main.transcribe", return_value="What is the capital of France?")
+    @patch("main.transcode_to_wav", return_value=b"RIFF" + b"\x00" * 100)
+    def test_chat_with_context_passes_history_to_llm(self, mock_transcode, mock_stt, mock_llm, mock_tts):
+        context = json.dumps([
+            {"role": "user", "content": "Hi there"},
+            {"role": "assistant", "content": "Hello! How can I help?"},
+        ])
+        r = client.post(
+            "/v1/chat",
+            files={"file": ("test.m4a", io.BytesIO(FAKE_AUDIO), "audio/mp4")},
+            data={"api_key": VALID_KEY, "context": context},
+        )
+        assert r.status_code == 200
+        # Verify ask_gemini was called with history
+        mock_llm.assert_called_once()
+        call_kwargs = mock_llm.call_args
+        assert call_kwargs[1]["history"] is not None
+        assert len(call_kwargs[1]["history"]) == 2
+
+    @patch("main.synthesize_speech", return_value=b"\xff\xfb\x90\x00" * 100)
+    @patch("main.ask_gemini", return_value="Sure!")
+    @patch("main.transcribe", return_value="Tell me more")
+    @patch("main.transcode_to_wav", return_value=b"RIFF" + b"\x00" * 100)
+    def test_chat_with_empty_context_works(self, mock_transcode, mock_stt, mock_llm, mock_tts):
+        r = client.post(
+            "/v1/chat",
+            files={"file": ("test.m4a", io.BytesIO(FAKE_AUDIO), "audio/mp4")},
+            data={"api_key": VALID_KEY, "context": ""},
+        )
+        assert r.status_code == 200
+        mock_llm.assert_called_once()
+        assert mock_llm.call_args[1]["history"] is None
+
+    @patch("main.synthesize_speech", return_value=b"\xff\xfb\x90\x00" * 100)
+    @patch("main.ask_gemini", return_value="Sure!")
+    @patch("main.transcribe", return_value="Tell me more")
+    @patch("main.transcode_to_wav", return_value=b"RIFF" + b"\x00" * 100)
+    def test_chat_with_invalid_context_json_ignores_it(self, mock_transcode, mock_stt, mock_llm, mock_tts):
+        r = client.post(
+            "/v1/chat",
+            files={"file": ("test.m4a", io.BytesIO(FAKE_AUDIO), "audio/mp4")},
+            data={"api_key": VALID_KEY, "context": "not valid json{{{"},
+        )
+        assert r.status_code == 200
+        mock_llm.assert_called_once()
+        assert mock_llm.call_args[1]["history"] is None
+
+    @patch("main.synthesize_speech", return_value=b"\xff\xfb\x90\x00" * 100)
+    @patch("main.ask_gemini", return_value="Response after multi-turn")
+    @patch("main.transcribe", return_value="And what about dessert?")
+    @patch("main.transcode_to_wav", return_value=b"RIFF" + b"\x00" * 100)
+    def test_chat_with_multi_turn_context(self, mock_transcode, mock_stt, mock_llm, mock_tts):
+        context = json.dumps([
+            {"role": "user", "content": "What should I eat?"},
+            {"role": "assistant", "content": "Try pasta."},
+            {"role": "user", "content": "What kind?"},
+            {"role": "assistant", "content": "Carbonara is great."},
+        ])
+        r = client.post(
+            "/v1/chat",
+            files={"file": ("test.m4a", io.BytesIO(FAKE_AUDIO), "audio/mp4")},
+            data={"api_key": VALID_KEY, "context": context},
+        )
+        assert r.status_code == 200
+        assert r.headers["x-question-text"] == "And what about dessert?"
+        assert r.headers["x-response-text"] == "Response after multi-turn"
+        call_kwargs = mock_llm.call_args
+        assert len(call_kwargs[1]["history"]) == 4
 
     @patch("main.transcribe", return_value="   ")
     @patch("main.transcode_to_wav", return_value=b"RIFF" + b"\x00" * 100)

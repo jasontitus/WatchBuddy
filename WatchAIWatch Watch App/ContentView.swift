@@ -21,6 +21,8 @@ struct ContentView: View {
     @State private var appState: AppState = .idle
     @State private var responseURL: URL?
     @State private var responseText: String?
+    @State private var questionText: String?
+    @State private var conversationHistory: [(question: String, answer: String)] = []
     @State private var errorMessage: String?
     @Environment(\.scenePhase) private var scenePhase
 
@@ -135,13 +137,22 @@ struct ContentView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
-                HStack(spacing: 16) {
+                HStack(spacing: 12) {
                     Button(action: replayResponse) {
                         Image(systemName: "play.fill")
                             .font(.title3)
                             .foregroundColor(.white)
                             .frame(width: 44, height: 44)
                             .background(Circle().fill(Color.green))
+                    }
+                    .buttonStyle(.plain)
+
+                    Button(action: continueConversation) {
+                        Image(systemName: "text.bubble.fill")
+                            .font(.title3)
+                            .foregroundColor(.white)
+                            .frame(width: 44, height: 44)
+                            .background(Circle().fill(Color.orange))
                     }
                     .buttonStyle(.plain)
 
@@ -231,11 +242,12 @@ struct ContentView: View {
         appState = .processing
         WKInterfaceDevice.current().play(.click)
 
-        network.uploadRecording(fileURL: fileURL) { result in
+        network.uploadRecording(fileURL: fileURL, history: conversationHistory) { result in
             switch result {
             case .success(let response):
                 responseURL = response.audioURL
                 responseText = response.text
+                questionText = response.questionText
                 appState = .playing
                 player.play(url: response.audioURL)
             case .failure(let error):
@@ -252,10 +264,23 @@ struct ContentView: View {
         player.play(url: url)
     }
 
+    private func continueConversation() {
+        if let q = questionText, let a = responseText {
+            conversationHistory.append((question: q, answer: a))
+        }
+        player.stop()
+        responseURL = nil
+        responseText = nil
+        questionText = nil
+        startRecording()
+    }
+
     private func newRecording() {
         player.stop()
         responseURL = nil
         responseText = nil
+        questionText = nil
+        conversationHistory = []
         appState = .idle
     }
 }
