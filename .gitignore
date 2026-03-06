@@ -25,3 +25,6 @@ __pycache__/
 
 # Environment / secrets
 .env
+
+# Server logs
+Server/logs/

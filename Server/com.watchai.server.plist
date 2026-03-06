@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.watchai.server</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>__HOME__/experiments/WatchAI/Server/venv/bin/python</string>
+        <string>__HOME__/experiments/WatchAI/Server/main.py</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>__HOME__/experiments/WatchAI/Server</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>GOOGLE_API_KEY</key>
+        <string>YOUR_GOOGLE_API_KEY</string>
+        <key>PORT</key>
+        <string>8333</string>
+        <key>HOST</key>
+        <string>0.0.0.0</string>
+        <key>ACCESS_KEY</key>
+        <string>YOUR_ACCESS_KEY</string>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>__HOME__/experiments/WatchAI/Server/logs/server.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>__HOME__/experiments/WatchAI/Server/logs/server.err</string>
+
+    <key>ThrottleInterval</key>
+    <integer>5</integer>
+</dict>
+</plist>
