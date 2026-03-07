@@ -417,6 +417,7 @@
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "WatchAI needs microphone access to record your voice for the AI assistant.";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.watchai.app;
+				INFOPLIST_KEY_WKRunsIndependentlyOfCompanionApp = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -425,7 +426,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.watchai.app.watchkitapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = watchos;
-				SKIP_INSTALL = YES;
+				SKIP_INSTALL = NO;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
@@ -451,6 +452,7 @@
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "WatchAI needs microphone access to record your voice for the AI assistant.";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.watchai.app;
+				INFOPLIST_KEY_WKRunsIndependentlyOfCompanionApp = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -459,7 +461,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.watchai.app.watchkitapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = watchos;
-				SKIP_INSTALL = YES;
+				SKIP_INSTALL = NO;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
