@@ -251,7 +251,7 @@ async def tts(req: TTSRequest):
         return JSONResponse(status_code=500, content={"error": f"TTS failed: {type(e).__name__}"})
 
 
-@app.get("/health")
+@app.api_route("/health", methods=["GET", "HEAD"])
 async def health():
     return {"status": "ok", "access_key_hash": ACCESS_KEY_HASH}
 
