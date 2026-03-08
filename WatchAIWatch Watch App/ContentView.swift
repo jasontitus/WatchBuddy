@@ -50,6 +50,7 @@ struct ContentView: View {
                     Text("Listening...")
                         .font(.footnote)
                         .foregroundColor(.gray)
+                    cancelButton
                     Spacer()
 
                 case .processing:
@@ -84,6 +85,14 @@ struct ContentView: View {
                         .font(.footnote)
                         .foregroundColor(.gray)
                         .multilineTextAlignment(.center)
+                    if responseText != nil {
+                        // Had a previous response — offer to go back to it
+                        Button("Back") {
+                            appState = .done
+                        }
+                        .font(.footnote)
+                        .foregroundColor(.orange)
+                    }
                     newRecordingButton
                     Spacer()
                 }
@@ -121,7 +130,12 @@ struct ContentView: View {
         }
         .onChange(of: scenePhase) { phase in
             if phase == .active && appState == .playing && !player.isPlaying {
-                appState = .done
+                // Playback stopped while backgrounded
+                if responseText != nil {
+                    appState = .done
+                } else {
+                    appState = .idle
+                }
             }
         }
         } // NavigationStack
@@ -221,11 +235,14 @@ struct ContentView: View {
     private var cancelButton: some View {
         Button("Cancel") {
             player.stop()
+            _ = recorder.stopRecording()
             session.endSession()
-            responseURL = nil
-            responseText = nil
-            questionText = nil
-            appState = .idle
+            // Return to last completed response if we have one
+            if responseText != nil {
+                appState = .done
+            } else {
+                appState = .idle
+            }
         }
         .font(.footnote)
         .foregroundColor(.red)
