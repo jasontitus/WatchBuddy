@@ -114,6 +114,7 @@ struct ContentView: View {
                 } else {
                     appState = .done
                 }
+                session.endSession()
             }
         }
         .onChange(of: player.lastError) { err in
@@ -285,13 +286,14 @@ struct ContentView: View {
             case .failure(let error):
                 errorMessage = error.localizedDescription
                 appState = .error
+                session.endSession()
             }
-            session.endSession()
         }
     }
 
     private func replayResponse() {
         guard let url = responseURL else { return }
+        session.startSession()
         appState = .playing
         player.play(url: url)
     }
