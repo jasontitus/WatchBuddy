@@ -1,0 +1,20 @@
+services:
+  watchai-server:
+    build: .
+    env_file: .env
+    ports:
+      - "${PORT:-8000}:${PORT:-8000}"
+    volumes:
+      - huggingface-cache:/root/.cache/huggingface
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:${PORT:-8000}/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+# For NVIDIA GPU support, run:
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up
+
+volumes:
+  huggingface-cache:

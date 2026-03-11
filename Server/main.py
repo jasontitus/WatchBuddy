@@ -28,11 +28,14 @@ logger = logging.getLogger("watchai")
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
 
+DEVICE = os.getenv("DEVICE", "cpu")
+COMPUTE_TYPE = "float16" if DEVICE == "cuda" else "int8"
+
 app = FastAPI(title="WatchAI Voice Server")
 
 # --- Model Initialization ---
 
-whisper_model = WhisperModel("distil-small.en", device="cpu", compute_type="int8")
+whisper_model = WhisperModel("distil-small.en", device=DEVICE, compute_type=COMPUTE_TYPE)
 
 gemini_client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
 GEMINI_MODEL = "gemini-2.0-flash"
