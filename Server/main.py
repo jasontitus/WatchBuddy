@@ -88,7 +88,7 @@ def transcribe(wav_bytes: bytes) -> str:
         os.unlink(tmp_path)
 
 
-def ask_gemini(text: str, history: list | None = None) -> str:
+def ask_gemini(text: str, history: list = None) -> str:
     """Get a concise response from Gemini, optionally with conversation history."""
     contents = []
     if history:

@@ -385,3 +385,192 @@ class TestPIISafety:
         error_msg = r.json()["error"]
         assert "hunter2" not in error_msg
         assert "password" not in error_msg
+
+
+# ──────────────────────────────────────────────
+# HEAD /health
+# ──────────────────────────────────────────────
+
+class TestHealthHEAD:
+    def test_head_health_returns_200(self):
+        r = client.head("/health")
+        assert r.status_code == 200
+
+    def test_head_health_has_no_body(self):
+        r = client.head("/health")
+        assert r.status_code == 200
+        # HEAD responses should have empty body
+        assert len(r.content) == 0
+
+
+# ──────────────────────────────────────────────
+# Chat auth edge cases
+# ──────────────────────────────────────────────
+
+class TestChatAuth:
+    def test_chat_missing_api_key_returns_422(self):
+        """Missing api_key form field entirely."""
+        r = client.post(
+            "/v1/chat",
+            files={"file": ("test.m4a", io.BytesIO(FAKE_AUDIO), "audio/mp4")},
+        )
+        assert r.status_code == 422
+
+    def test_chat_empty_api_key_returns_401(self):
+        r = client.post(
+            "/v1/chat",
+            files={"file": ("test.m4a", io.BytesIO(FAKE_AUDIO), "audio/mp4")},
+            data={"api_key": ""},
+        )
+        assert r.status_code == 401
+
+    @patch("main.synthesize_speech", return_value=b"\xff\xfb\x90\x00" * 100)
+    @patch("main.ask_gemini", return_value="Response")
+    @patch("main.transcribe", return_value="Hi")
+    @patch("main.transcode_to_wav", return_value=b"RIFF" + b"\x00" * 100)
+    def test_chat_without_context_field_succeeds(self, mock_t, mock_s, mock_g, mock_tts):
+        """Chat request with no context form field at all (not even empty)."""
+        r = client.post(
+            "/v1/chat",
+            files={"file": ("test.m4a", io.BytesIO(FAKE_AUDIO), "audio/mp4")},
+            data={"api_key": VALID_KEY},
+        )
+        assert r.status_code == 200
+        # ask_gemini should be called with history=None
+        mock_g.assert_called_once()
+        assert mock_g.call_args[1]["history"] is None
+
+
+# ──────────────────────────────────────────────
+# STT no-auth verification
+# ──────────────────────────────────────────────
+
+class TestSTTNoAuth:
+    @patch("main.transcribe", return_value="No key needed")
+    @patch("main.transcode_to_wav", return_value=b"RIFF" + b"\x00" * 100)
+    def test_stt_requires_no_api_key(self, mock_transcode, mock_stt):
+        """STT endpoint works without any api_key."""
+        r = client.post(
+            "/v1/stt",
+            files={"file": ("test.m4a", io.BytesIO(FAKE_AUDIO), "audio/mp4")},
+        )
+        assert r.status_code == 200
+        assert r.json()["text"] == "No key needed"
+
+
+# ──────────────────────────────────────────────
+# TTS edge cases
+# ──────────────────────────────────────────────
+
+class TestTTSEdgeCases:
+    @patch("main.synthesize_speech", return_value=b"\xff\xfb\x90\x00" * 10)
+    def test_tts_with_whitespace_only_text(self, mock_tts):
+        """TTS with whitespace-only text still calls synthesize."""
+        r = client.post("/v1/tts", json={"text": "   "})
+        assert r.status_code == 200
+        mock_tts.assert_called_once_with("   ")
+
+    def test_tts_no_body_returns_422(self):
+        r = client.post("/v1/tts")
+        assert r.status_code == 422
+
+    @patch("main.synthesize_speech", return_value=b"\xff\xfb\x90\x00" * 100)
+    def test_tts_response_has_content_disposition(self, mock_tts):
+        r = client.post("/v1/tts", json={"text": "Hello"})
+        assert r.status_code == 200
+        assert "response.mp3" in r.headers.get("content-disposition", "")
+
+
+# ──────────────────────────────────────────────
+# ask_gemini unit tests
+# ──────────────────────────────────────────────
+
+class TestAskGemini:
+    @patch("main.gemini_client")
+    def test_ask_gemini_no_history(self, mock_client):
+        from main import ask_gemini
+        mock_response = MagicMock()
+        mock_response.text = "  Test response  "
+        mock_client.models.generate_content.return_value = mock_response
+
+        result = ask_gemini("Hello")
+        assert result == "Test response"
+
+        call_args = mock_client.models.generate_content.call_args
+        contents = call_args[1]["contents"]
+        assert len(contents) == 1
+        assert contents[0]["role"] == "user"
+        assert contents[0]["parts"][0]["text"] == "Hello"
+
+    @patch("main.gemini_client")
+    def test_ask_gemini_with_history_maps_roles(self, mock_client):
+        """Verify assistant role maps to 'model' for Gemini API."""
+        from main import ask_gemini
+        mock_response = MagicMock()
+        mock_response.text = "Response"
+        mock_client.models.generate_content.return_value = mock_response
+
+        history = [
+            {"role": "user", "content": "Q1"},
+            {"role": "assistant", "content": "A1"},
+            {"role": "user", "content": "Q2"},
+            {"role": "assistant", "content": "A2"},
+        ]
+        ask_gemini("Q3", history=history)
+
+        call_args = mock_client.models.generate_content.call_args
+        contents = call_args[1]["contents"]
+        assert len(contents) == 5  # 4 history + 1 current
+        assert contents[0]["role"] == "user"
+        assert contents[1]["role"] == "model"  # assistant -> model
+        assert contents[2]["role"] == "user"
+        assert contents[3]["role"] == "model"  # assistant -> model
+        assert contents[4]["role"] == "user"
+        assert contents[4]["parts"][0]["text"] == "Q3"
+
+    @patch("main.gemini_client")
+    def test_ask_gemini_with_empty_history(self, mock_client):
+        """Empty history list should behave like no history."""
+        from main import ask_gemini
+        mock_response = MagicMock()
+        mock_response.text = "Response"
+        mock_client.models.generate_content.return_value = mock_response
+
+        ask_gemini("Hello", history=[])
+
+        call_args = mock_client.models.generate_content.call_args
+        contents = call_args[1]["contents"]
+        assert len(contents) == 1  # empty list is falsy, no history added
+
+
+# ──────────────────────────────────────────────
+# Boundary / edge cases
+# ──────────────────────────────────────────────
+
+class TestBoundaryEdgeCases:
+    def test_stt_oversized_file_at_exact_boundary(self):
+        """File exactly 1 byte over the limit."""
+        data = b"\x00" * (MAX_UPLOAD_BYTES + 1)
+        r = client.post(
+            "/v1/stt",
+            files={"file": ("test.m4a", io.BytesIO(data), "audio/mp4")},
+        )
+        assert r.status_code == 400
+
+    @patch("main.transcribe", return_value="Boundary test")
+    @patch("main.transcode_to_wav", return_value=b"RIFF" + b"\x00" * 100)
+    def test_stt_exactly_at_size_limit_succeeds(self, mock_t, mock_s):
+        data = b"\x00" * MAX_UPLOAD_BYTES
+        r = client.post(
+            "/v1/stt",
+            files={"file": ("test.m4a", io.BytesIO(data), "audio/mp4")},
+        )
+        assert r.status_code == 200
+
+    def test_unknown_endpoint_returns_404(self):
+        r = client.get("/v1/nonexistent")
+        assert r.status_code in (404, 405)
+
+    def test_chat_wrong_method_returns_405(self):
+        r = client.get("/v1/chat")
+        assert r.status_code == 405
