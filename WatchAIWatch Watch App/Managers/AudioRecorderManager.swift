@@ -10,8 +10,32 @@ final class AudioRecorderManager: NSObject, ObservableObject {
 
     func startRecording() {
         lastError = nil
+        recordingURL = nil
 
         let session = AVAudioSession.sharedInstance()
+
+        switch AVAudioApplication.shared.recordPermission {
+        case .denied:
+            print("[AudioRecorder] Microphone permission denied")
+            lastError = "Microphone access denied. Open Settings on your Apple Watch → Privacy → Microphone and enable WatchAI."
+            return
+        case .undetermined:
+            AVAudioApplication.requestRecordPermission { [weak self] granted in
+                DispatchQueue.main.async {
+                    if granted {
+                        self?.startRecording()
+                    } else {
+                        self?.lastError = "Microphone permission is required to record."
+                    }
+                }
+            }
+            return
+        case .granted:
+            break
+        @unknown default:
+            break
+        }
+
         do {
             try session.setCategory(.playAndRecord, mode: .default)
             try session.setActive(true)

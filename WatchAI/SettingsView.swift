@@ -21,6 +21,7 @@ struct SettingsView: View {
                 TextField("Server URL", text: $serverURL)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
+                    .keyboardType(.URL)
             }
 
             Section("AI Provider") {
@@ -58,9 +59,10 @@ struct SettingsView: View {
                     }
                 }
             }
+
             Section {
                 Link("Privacy Policy", destination: URL(string: "https://jasontitus.github.io/WatchBuddy/privacy.html")!)
-                    .font(.footnote)
+                    .font(.body)
                 Text(versionString)
                     .font(.footnote)
                     .foregroundColor(.gray)

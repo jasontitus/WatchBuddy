@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.watchai.ngrok</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/ngrok</string>
+        <string>http</string>
+        <string>8333</string>
+        <string>--url=https://YOUR_NGROK_DOMAIN</string>
+        <string>--log=stdout</string>
+        <string>--log-format=logfmt</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>__HOME__/experiments/WatchAI/Server</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>__HOME__/experiments/WatchAI/Server/logs/ngrok.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>__HOME__/experiments/WatchAI/Server/logs/ngrok.err</string>
+
+    <key>ThrottleInterval</key>
+    <integer>5</integer>
+</dict>
+</plist>

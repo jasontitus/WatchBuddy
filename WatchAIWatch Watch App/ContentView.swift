@@ -17,6 +17,7 @@ struct ContentView: View {
     @StateObject private var session = SessionManager()
 
     @AppStorage("server_url") private var serverURL = "https://bell-elliptic-adella.ngrok-free.dev"
+    @AppStorage("has_api_key") private var hasApiKey = false
 
     @State private var appState: AppState = .idle
     @State private var responseURL: URL?
@@ -28,8 +29,7 @@ struct ContentView: View {
 
     private var isConfigured: Bool {
         let hasServer = !serverURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        let hasKey = KeychainManager.load(key: "api_key") != nil
-        return hasServer && hasKey
+        return hasServer && hasApiKey
     }
 
     var body: some View {
@@ -106,6 +106,9 @@ struct ContentView: View {
             }
         }
         .onAppear { network.fetchAccessKeyHash() }
+        .onChange(of: serverURL) { _ in
+            network.fetchAccessKeyHash()
+        }
         .onChange(of: player.isPlaying) { playing in
             if !playing && appState == .playing {
                 if let err = player.lastError {
@@ -124,9 +127,16 @@ struct ContentView: View {
             }
         }
         .onChange(of: recorder.lastError) { err in
-            if let err = err, appState == .recording {
+            if let err = err, appState == .recording || appState == .idle {
                 errorMessage = err
                 appState = .error
+                session.endSession()
+            }
+        }
+        .onChange(of: recorder.isRecording) { recording in
+            // Handles async permission grant — recording starts after user approves mic
+            if recording && appState == .idle {
+                appState = .recording
             }
         }
         .onChange(of: scenePhase) { phase in
@@ -262,13 +272,23 @@ struct ContentView: View {
     private func startRecording() {
         session.startSession()
         recorder.startRecording()
-        appState = .recording
+        if let error = recorder.lastError {
+            errorMessage = error
+            appState = .error
+            session.endSession()
+            return
+        }
+        if recorder.isRecording {
+            appState = .recording
+        }
+        // If permission was undetermined, the recorder will update
+        // isRecording or lastError asynchronously — handled by .onChange below
     }
 
     private func stopRecording() {
         guard let fileURL = recorder.stopRecording() else {
             appState = .error
-            errorMessage = "No recording found"
+            errorMessage = recorder.lastError ?? "No recording found"
             return
         }
 

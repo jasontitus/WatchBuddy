@@ -55,6 +55,12 @@ class TTSRequest(BaseModel):
     text: str
 
 
+class TextChatRequest(BaseModel):
+    text: str
+    api_key: str
+    context: str = ""
+
+
 def transcode_to_wav(input_bytes: bytes) -> bytes:
     """Convert uploaded M4A to 16kHz mono WAV using ffmpeg subprocess."""
     with tempfile.NamedTemporaryFile(suffix=".m4a", delete=False) as tmp_in:
@@ -207,6 +213,37 @@ async def chat(file: UploadFile = File(...), api_key: str = Form(...), context: 
     except Exception as e:
         logger.exception("[Chat] Pipeline failed")
         return JSONResponse(status_code=500, content={"error": f"Chat pipeline failed: {type(e).__name__}"})
+
+
+@app.post("/v1/text")
+async def text_chat(req: TextChatRequest):
+    """
+    Text-only chat for trusted users. Validates access key, runs LLM only (no STT/TTS).
+    """
+    if not ACCESS_KEY or req.api_key != ACCESS_KEY:
+        return JSONResponse(status_code=401, content={"error": "Invalid access key"})
+
+    try:
+        if not req.text.strip():
+            return JSONResponse(status_code=400, content={"error": "Empty text"})
+        logger.info(f"[TextChat] Received {len(req.text)} chars")
+
+        history = None
+        if req.context:
+            try:
+                history = json.loads(req.context)
+                logger.info(f"[TextChat] Conversation history: {len(history)} messages")
+            except json.JSONDecodeError:
+                logger.warning("[TextChat] Invalid context JSON, ignoring")
+
+        t0 = time.time()
+        assistant_text = ask_gemini(req.text, history=history)
+        logger.info(f"[TextChat] Response {len(assistant_text)} chars ({time.time() - t0:.2f}s)")
+
+        return {"response_text": assistant_text}
+    except Exception as e:
+        logger.exception("[TextChat] Pipeline failed")
+        return JSONResponse(status_code=500, content={"error": f"Text chat failed: {type(e).__name__}"})
 
 
 @app.post("/v1/stt")
