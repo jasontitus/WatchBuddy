@@ -38,9 +38,10 @@ app = FastAPI(title="WatchAI Voice Server")
 whisper_model = WhisperModel("distil-small.en", device=DEVICE, compute_type=COMPUTE_TYPE)
 
 gemini_client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
-GEMINI_MODEL = "gemini-2.0-flash"
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
 GEMINI_CONFIG = types.GenerateContentConfig(
     system_instruction="You are a helpful voice assistant on an Apple Watch. Be concise. Reply in 1-2 short sentences. Never use markdown or special formatting.",
+    thinking_config=types.ThinkingConfig(thinking_budget=0),
 )
 
 kokoro_pipeline = KPipeline(lang_code="a")
