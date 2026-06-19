@@ -1,9 +1,12 @@
+import asyncio
 import hashlib
+import hmac
 import io
 import json
 import logging
 import os
 import tempfile
+import threading
 import subprocess
 import time
 
@@ -27,6 +30,9 @@ logging.basicConfig(
 logger = logging.getLogger("watchai")
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
+MAX_HISTORY_TURNS = 10  # cap conversation context sent to the LLM
+MAX_TTS_CHARS = 2000  # guard against runaway synthesis
+FFMPEG_TIMEOUT = int(os.getenv("FFMPEG_TIMEOUT", "30"))
 
 DEVICE = os.getenv("DEVICE", "cpu")
 COMPUTE_TYPE = "float16" if DEVICE == "cuda" else "int8"
@@ -36,6 +42,13 @@ app = FastAPI(title="WatchAI Voice Server")
 # --- Model Initialization ---
 
 whisper_model = WhisperModel("distil-small.en", device=DEVICE, compute_type=COMPUTE_TYPE)
+
+# faster-whisper (CTranslate2) and Kokoro (torch) models are not safe to call
+# from multiple threads at once. FastAPI offloads blocking work to a threadpool,
+# so guard each model with its own lock to serialize inference per model while
+# still allowing STT and TTS to run concurrently.
+_whisper_lock = threading.Lock()
+_kokoro_lock = threading.Lock()
 
 gemini_client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
 GEMINI_MODEL = "gemini-2.0-flash"
@@ -49,6 +62,52 @@ SYSTEM_SAMPLE_RATE = 24000
 
 ACCESS_KEY = os.getenv("ACCESS_KEY", "")
 ACCESS_KEY_HASH = hashlib.sha256(ACCESS_KEY.encode()).hexdigest() if ACCESS_KEY else ""
+
+if not ACCESS_KEY:
+    logger.warning("ACCESS_KEY is not set — trusted-mode endpoints (/v1/chat, /v1/text) will reject all requests.")
+if not os.getenv("GOOGLE_API_KEY"):
+    logger.warning("GOOGLE_API_KEY is not set — LLM calls will fail.")
+
+
+def verify_access_key(provided: str) -> bool:
+    """Constant-time comparison of the provided access key against the server's."""
+    if not ACCESS_KEY or not provided:
+        return False
+    return hmac.compare_digest(provided, ACCESS_KEY)
+
+
+def parse_history(context: str) -> list | None:
+    """Parse and validate conversation history JSON.
+
+    Returns a list of {"role", "content"} dicts (most recent MAX_HISTORY_TURNS*2
+    messages), or None if absent/invalid. Malformed entries are dropped rather
+    than crashing the request.
+    """
+    if not context:
+        return None
+    try:
+        raw = json.loads(context)
+    except (json.JSONDecodeError, TypeError):
+        logger.warning("Invalid context JSON, ignoring")
+        return None
+    if not isinstance(raw, list):
+        logger.warning("Context is not a list, ignoring")
+        return None
+
+    cleaned = []
+    for msg in raw:
+        if not isinstance(msg, dict):
+            continue
+        content = msg.get("content")
+        if not isinstance(content, str) or not content.strip():
+            continue
+        role = "assistant" if msg.get("role") == "assistant" else "user"
+        cleaned.append({"role": role, "content": content})
+
+    if not cleaned:
+        return None
+    # Keep only the most recent turns to bound latency/cost.
+    return cleaned[-(MAX_HISTORY_TURNS * 2):]
 
 
 class TTSRequest(BaseModel):
@@ -74,7 +133,7 @@ def transcode_to_wav(input_bytes: bytes) -> bytes:
                 "-ar", "16000", "-ac", "1", "-f", "wav", "pipe:1",
             ],
             capture_output=True,
-            timeout=10,
+            timeout=FFMPEG_TIMEOUT,
         )
         if result.returncode != 0:
             raise RuntimeError(f"ffmpeg error: {result.stderr.decode()}")
@@ -90,9 +149,18 @@ def transcribe(wav_bytes: bytes) -> str:
         tmp_path = tmp.name
 
     try:
-        segments, _ = whisper_model.transcribe(tmp_path, beam_size=1)
-        text = " ".join(seg.text.strip() for seg in segments)
-        return text
+        # vad_filter drops silence/noise so Whisper doesn't hallucinate filler
+        # words ("Thank you.", "you") on quiet or empty recordings.
+        # condition_on_previous_text=False avoids repetition loops on short clips.
+        with _whisper_lock:
+            segments, _ = whisper_model.transcribe(
+                tmp_path,
+                beam_size=1,
+                vad_filter=True,
+                condition_on_previous_text=False,
+            )
+            text = " ".join(seg.text.strip() for seg in segments)
+        return text.strip()
     finally:
         os.unlink(tmp_path)
 
@@ -102,8 +170,11 @@ def ask_gemini(text: str, history: list = None) -> str:
     contents = []
     if history:
         for msg in history:
+            content = msg.get("content")
+            if not isinstance(content, str) or not content.strip():
+                continue
             role = "model" if msg.get("role") == "assistant" else "user"
-            contents.append({"role": role, "parts": [{"text": msg["content"]}]})
+            contents.append({"role": role, "parts": [{"text": content}]})
     contents.append({"role": "user", "parts": [{"text": text}]})
 
     response = gemini_client.models.generate_content(
@@ -111,16 +182,22 @@ def ask_gemini(text: str, history: list = None) -> str:
         contents=contents,
         config=GEMINI_CONFIG,
     )
-    return response.text.strip()
+    # response.text is None when the model returns no/blocked content.
+    reply = (response.text or "").strip()
+    if not reply:
+        logger.warning("[LLM] Empty/blocked response from Gemini")
+        return "Sorry, I couldn't come up with a response. Please try again."
+    return reply
 
 
 def synthesize_speech(text: str) -> bytes:
     """Generate speech audio using Kokoro TTS, return MP3 bytes."""
-    generator = kokoro_pipeline(text, voice="af_heart", speed=1.1)
+    with _kokoro_lock:
+        generator = kokoro_pipeline(text, voice="af_heart", speed=1.1)
 
-    all_audio = []
-    for _, _, audio_chunk in generator:
-        all_audio.append(audio_chunk)
+        all_audio = []
+        for _, _, audio_chunk in generator:
+            all_audio.append(audio_chunk)
 
     if not all_audio:
         raise RuntimeError("TTS produced no audio")
@@ -143,7 +220,7 @@ def synthesize_speech(text: str) -> bytes:
         ],
         input=pcm_bytes,
         capture_output=True,
-        timeout=10,
+        timeout=FFMPEG_TIMEOUT,
     )
     if result.returncode != 0:
         raise RuntimeError(f"ffmpeg MP3 encode error: {result.stderr.decode()}")
@@ -158,7 +235,7 @@ async def chat(file: UploadFile = File(...), api_key: str = Form(...), context: 
     Validates the shared access key, then runs STT -> LLM -> TTS.
     Optional 'context' field: JSON array of [{role, content}] for conversation history.
     """
-    if not ACCESS_KEY or api_key != ACCESS_KEY:
+    if not verify_access_key(api_key):
         return JSONResponse(status_code=401, content={"error": "Invalid access key"})
 
     try:
@@ -170,20 +247,16 @@ async def chat(file: UploadFile = File(...), api_key: str = Form(...), context: 
         logger.info(f"[Chat] Received {len(input_bytes)} bytes: {file.filename}")
 
         # Parse conversation history if provided
-        history = None
-        if context:
-            try:
-                history = json.loads(context)
-                logger.info(f"[Chat] Conversation history: {len(history)} messages")
-            except json.JSONDecodeError:
-                logger.warning("[Chat] Invalid context JSON, ignoring")
+        history = parse_history(context)
+        if history:
+            logger.info(f"[Chat] Conversation history: {len(history)} messages")
 
         t0 = time.time()
-        wav_bytes = transcode_to_wav(input_bytes)
+        wav_bytes = await asyncio.to_thread(transcode_to_wav, input_bytes)
         logger.info(f"[Transcode] WAV size: {len(wav_bytes)} bytes ({time.time() - t0:.2f}s)")
 
         t0 = time.time()
-        user_text = transcribe(wav_bytes)
+        user_text = await asyncio.to_thread(transcribe, wav_bytes)
         logger.info(f"[STT] Transcribed {len(user_text.split())} words ({time.time() - t0:.2f}s)")
 
         if not user_text.strip():
@@ -194,11 +267,11 @@ async def chat(file: UploadFile = File(...), api_key: str = Form(...), context: 
             )
 
         t0 = time.time()
-        assistant_text = ask_gemini(user_text, history=history)
+        assistant_text = await asyncio.to_thread(ask_gemini, user_text, history=history)
         logger.info(f"[LLM] Response {len(assistant_text)} chars ({time.time() - t0:.2f}s)")
 
         t0 = time.time()
-        mp3_bytes = synthesize_speech(assistant_text)
+        mp3_bytes = await asyncio.to_thread(synthesize_speech, assistant_text)
         logger.info(f"[TTS] MP3 size: {len(mp3_bytes)} bytes ({time.time() - t0:.2f}s)")
 
         return StreamingResponse(
@@ -220,7 +293,7 @@ async def text_chat(req: TextChatRequest):
     """
     Text-only chat for trusted users. Validates access key, runs LLM only (no STT/TTS).
     """
-    if not ACCESS_KEY or req.api_key != ACCESS_KEY:
+    if not verify_access_key(req.api_key):
         return JSONResponse(status_code=401, content={"error": "Invalid access key"})
 
     try:
@@ -228,16 +301,12 @@ async def text_chat(req: TextChatRequest):
             return JSONResponse(status_code=400, content={"error": "Empty text"})
         logger.info(f"[TextChat] Received {len(req.text)} chars")
 
-        history = None
-        if req.context:
-            try:
-                history = json.loads(req.context)
-                logger.info(f"[TextChat] Conversation history: {len(history)} messages")
-            except json.JSONDecodeError:
-                logger.warning("[TextChat] Invalid context JSON, ignoring")
+        history = parse_history(req.context)
+        if history:
+            logger.info(f"[TextChat] Conversation history: {len(history)} messages")
 
         t0 = time.time()
-        assistant_text = ask_gemini(req.text, history=history)
+        assistant_text = await asyncio.to_thread(ask_gemini, req.text, history=history)
         logger.info(f"[TextChat] Response {len(assistant_text)} chars ({time.time() - t0:.2f}s)")
 
         return {"response_text": assistant_text}
@@ -258,11 +327,11 @@ async def stt(file: UploadFile = File(...)):
         logger.info(f"[STT] Received {len(input_bytes)} bytes: {file.filename}")
 
         t0 = time.time()
-        wav_bytes = transcode_to_wav(input_bytes)
+        wav_bytes = await asyncio.to_thread(transcode_to_wav, input_bytes)
         logger.info(f"[Transcode] WAV size: {len(wav_bytes)} bytes ({time.time() - t0:.2f}s)")
 
         t0 = time.time()
-        user_text = transcribe(wav_bytes)
+        user_text = await asyncio.to_thread(transcribe, wav_bytes)
         logger.info(f"[STT] Transcribed {len(user_text.split())} words ({time.time() - t0:.2f}s)")
 
         return {"text": user_text}
@@ -275,10 +344,13 @@ async def stt(file: UploadFile = File(...)):
 async def tts(req: TTSRequest):
     """Text-to-speech only. No auth required (BYOK mode)."""
     try:
-        logger.info(f"[TTS] Synthesizing {len(req.text)} chars...")
+        if not req.text.strip():
+            return JSONResponse(status_code=400, content={"error": "Empty text"})
+        text = req.text[:MAX_TTS_CHARS]
+        logger.info(f"[TTS] Synthesizing {len(text)} chars...")
 
         t0 = time.time()
-        mp3_bytes = synthesize_speech(req.text)
+        mp3_bytes = await asyncio.to_thread(synthesize_speech, text)
         logger.info(f"[TTS] MP3 size: {len(mp3_bytes)} bytes ({time.time() - t0:.2f}s)")
 
         return StreamingResponse(

@@ -318,9 +318,16 @@ struct ContentView: View {
         player.play(url: url)
     }
 
+    /// Most recent turns of context to send with each request. Bounds latency,
+    /// token cost, and request size; the server enforces its own cap too.
+    private let maxHistoryTurns = 10
+
     private func continueConversation() {
         if let q = questionText, let a = responseText {
             conversationHistory.append((question: q, answer: a))
+            if conversationHistory.count > maxHistoryTurns {
+                conversationHistory.removeFirst(conversationHistory.count - maxHistoryTurns)
+            }
         }
         player.stop()
         responseURL = nil

@@ -140,6 +140,12 @@ final class NetworkManager: NSObject, ObservableObject {
                     let detail = code.map { "HTTP \($0)" }
                     completion(.failure(NetworkError.serverError(detail: detail))); return
                 }
+                // The server returns an empty 200 body when STT produced no text
+                // (silence / unintelligible audio). Surface a friendly message
+                // instead of writing a 0-byte file that fails to play.
+                if data.isEmpty {
+                    completion(.failure(NetworkError.emptyTranscription)); return
+                }
                 let responseText = http.value(forHTTPHeaderField: "X-Response-Text") ?? ""
                 let questionText = http.value(forHTTPHeaderField: "X-Question-Text") ?? ""
                 self.saveAndReturn(data: data, text: responseText, questionText: questionText, completion: completion)
