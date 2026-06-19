@@ -52,6 +52,28 @@ threads without synchronization, and a few error paths can crash a request.
 > the shared networking/audio logic must be mirrored across both targets (or
 > the duplication factored into a shared target).
 
+### Duplication cleanup (done)
+
+The shared manager classes were de-duplicated into a single `Shared/Managers/`
+folder, added to **both** app targets via an Xcode synchronized root group
+(`PBXFileSystemSynchronizedRootGroup`, referenced from each target's
+`fileSystemSynchronizedGroups`). One physical copy now feeds both apps:
+
+- `NetworkManager.swift` — unified on the iOS superset (keeps `sendText`/text
+  pipeline; the watch simply doesn't call it). Generic system prompt.
+- `AudioRecorderManager.swift` — merged: the watch's mic-permission flow + the
+  iOS silence-detection, with `#if os(iOS)` for `.defaultToSpeaker` and a
+  platform-specific permission message. `silenceDetected` is observed only by
+  the iOS UI; it's inert (but harmless) on the watch.
+- `AudioPlayerManager.swift`, `KeychainManager.swift` — were already identical.
+
+`SessionManager.swift` (WatchKit) stays watch-only and is **not** shared.
+
+Validation without Xcode on Linux: all Swift sources pass `swiftc -parse`
+(syntax), and the `project.pbxproj` was checked for balanced delimiters and a
+correctly defined/referenced synchronized-group object. A full type-check still
+requires building in Xcode against the iOS/watchOS SDKs.
+
 ## Testing
 
 Server changes are covered by `Server/test_main.py` (extended). Run:

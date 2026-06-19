@@ -40,6 +40,11 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		7CA11A5E0000000000000001 /* Shared */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Shared;
+			sourceTree = "<group>";
+		};
 		7C21983A2F46BC5600CB93F4 /* WatchAI */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = WatchAI;
@@ -73,6 +78,7 @@
 		7C21982F2F46BC5600CB93F4 = {
 			isa = PBXGroup;
 			children = (
+				7CA11A5E0000000000000001 /* Shared */,
 				7C21983A2F46BC5600CB93F4 /* WatchAI */,
 				7C21984B2F46BD0800CB93F4 /* WatchAIWatch Watch App */,
 				7C2198392F46BC5600CB93F4 /* Products */,
@@ -107,6 +113,7 @@
 			);
 			fileSystemSynchronizedGroups = (
 				7C21983A2F46BC5600CB93F4 /* WatchAI */,
+				7CA11A5E0000000000000001 /* Shared */,
 			);
 			name = WatchAI;
 			packageProductDependencies = (
@@ -129,6 +136,7 @@
 			);
 			fileSystemSynchronizedGroups = (
 				7C21984B2F46BD0800CB93F4 /* WatchAIWatch Watch App */,
+				7CA11A5E0000000000000001 /* Shared */,
 			);
 			name = "WatchAIWatch Watch App";
 			packageProductDependencies = (
