@@ -29,6 +29,7 @@ os.environ.setdefault("GOOGLE_API_KEY", "fake-key")
 
 import io
 import json
+from urllib.parse import unquote
 import pytest
 from fastapi.testclient import TestClient
 
@@ -103,7 +104,7 @@ class TestChat:
         )
         assert r.status_code == 200
         assert r.headers["content-type"] == "audio/mpeg"
-        assert r.headers["x-response-text"] == "Hello there!"
+        assert unquote(r.headers["x-response-text"]) == "Hello there!"
         assert len(r.content) > 0
 
     @patch("main.synthesize_speech", return_value=b"\xff\xfb\x90\x00" * 100)
@@ -117,7 +118,7 @@ class TestChat:
             data={"api_key": VALID_KEY},
         )
         assert r.status_code == 200
-        assert r.headers["x-question-text"] == "Hi"
+        assert unquote(r.headers["x-question-text"]) == "Hi"
 
     @patch("main.synthesize_speech", return_value=b"\xff\xfb\x90\x00" * 100)
     @patch("main.ask_gemini", return_value="Paris is the capital.")
@@ -185,10 +186,28 @@ class TestChat:
             data={"api_key": VALID_KEY, "context": context},
         )
         assert r.status_code == 200
-        assert r.headers["x-question-text"] == "And what about dessert?"
-        assert r.headers["x-response-text"] == "Response after multi-turn"
+        assert unquote(r.headers["x-question-text"]) == "And what about dessert?"
+        assert unquote(r.headers["x-response-text"]) == "Response after multi-turn"
         call_kwargs = mock_llm.call_args
         assert len(call_kwargs[1]["history"]) == 4
+
+    @patch("main.synthesize_speech", return_value=b"\xff\xfb\x90\x00" * 100)
+    @patch("main.ask_gemini", return_value="Café — 30°C, naïve résumé 🌞")
+    @patch("main.transcribe", return_value="Comment ça va?")
+    @patch("main.transcode_to_wav", return_value=b"RIFF" + b"\x00" * 100)
+    def test_chat_non_ascii_headers_round_trip(self, mock_transcode, mock_stt, mock_llm, mock_tts):
+        """Non-Latin-1 text must survive the response headers intact."""
+        r = client.post(
+            "/v1/chat",
+            files={"file": ("test.m4a", io.BytesIO(FAKE_AUDIO), "audio/mp4")},
+            data={"api_key": VALID_KEY},
+        )
+        assert r.status_code == 200
+        # Raw header is ASCII-safe (percent-encoded)...
+        assert r.headers["x-response-text"].isascii()
+        # ...and decodes losslessly.
+        assert unquote(r.headers["x-response-text"]) == "Café — 30°C, naïve résumé 🌞"
+        assert unquote(r.headers["x-question-text"]) == "Comment ça va?"
 
     @patch("main.transcribe", return_value="   ")
     @patch("main.transcode_to_wav", return_value=b"RIFF" + b"\x00" * 100)

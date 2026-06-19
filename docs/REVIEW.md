@@ -30,6 +30,7 @@ threads without synchronization, and a few error paths can crash a request.
 | S8 | Reliability | Unbounded `history` could be sent to the LLM, growing latency/cost without limit. | Cap server-side history to the most recent N turns. |
 | S9 | Operability | Missing `GOOGLE_API_KEY` / `ACCESS_KEY` only surfaced as a 500 mid-request. | Log explicit warnings at startup. |
 | S10 | Performance | ffmpeg timeouts were a hard 10s; long TTS on CPU can exceed it. | Make timeouts configurable via env (`FFMPEG_TIMEOUT`). |
+| S11 | Accuracy | Raw LLM/transcript text was placed in HTTP headers; non-Latin-1 characters (em-dash, accents, emoji) get mangled, so the displayed text was garbled. | Percent-encode header values on the server, percent-decode on the watch. |
 
 ### Watch app (review-level — not compiled here)
 

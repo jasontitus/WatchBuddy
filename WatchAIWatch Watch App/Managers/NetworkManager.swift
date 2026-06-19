@@ -146,8 +146,12 @@ final class NetworkManager: NSObject, ObservableObject {
                 if data.isEmpty {
                     completion(.failure(NetworkError.emptyTranscription)); return
                 }
-                let responseText = http.value(forHTTPHeaderField: "X-Response-Text") ?? ""
-                let questionText = http.value(forHTTPHeaderField: "X-Question-Text") ?? ""
+                // Server percent-encodes these headers so non-ASCII text (em-dashes,
+                // accents, emoji) survives Latin-1 header transport intact.
+                let rawResponse = http.value(forHTTPHeaderField: "X-Response-Text") ?? ""
+                let rawQuestion = http.value(forHTTPHeaderField: "X-Question-Text") ?? ""
+                let responseText = rawResponse.removingPercentEncoding ?? rawResponse
+                let questionText = rawQuestion.removingPercentEncoding ?? rawQuestion
                 self.saveAndReturn(data: data, text: responseText, questionText: questionText, completion: completion)
             }
         }

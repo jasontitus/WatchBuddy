@@ -9,6 +9,7 @@ import tempfile
 import threading
 import subprocess
 import time
+from urllib.parse import quote
 
 import numpy as np
 from dotenv import load_dotenv
@@ -274,13 +275,16 @@ async def chat(file: UploadFile = File(...), api_key: str = Form(...), context: 
         mp3_bytes = await asyncio.to_thread(synthesize_speech, assistant_text)
         logger.info(f"[TTS] MP3 size: {len(mp3_bytes)} bytes ({time.time() - t0:.2f}s)")
 
+        # HTTP headers are limited to Latin-1; arbitrary LLM/transcript text may
+        # contain em-dashes, accented letters, or emoji. Percent-encode to keep
+        # the values ASCII-safe and lossless (the watch percent-decodes them).
         return StreamingResponse(
             io.BytesIO(mp3_bytes),
             media_type="audio/mpeg",
             headers={
                 "Content-Disposition": "attachment; filename=response.mp3",
-                "X-Response-Text": assistant_text,
-                "X-Question-Text": user_text,
+                "X-Response-Text": quote(assistant_text),
+                "X-Question-Text": quote(user_text),
             },
         )
     except Exception as e:
