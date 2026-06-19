@@ -416,13 +416,16 @@ class TestChatAuth:
         )
         assert r.status_code == 422
 
-    def test_chat_empty_api_key_returns_401(self):
+    def test_chat_empty_api_key_returns_422(self):
+        # An empty-string form field is treated as absent by the multipart
+        # parser, so FastAPI rejects the required api_key with 422 (before the
+        # handler's access-key check that would otherwise return 401).
         r = client.post(
             "/v1/chat",
             files={"file": ("test.m4a", io.BytesIO(FAKE_AUDIO), "audio/mp4")},
             data={"api_key": ""},
         )
-        assert r.status_code == 401
+        assert r.status_code == 422
 
     @patch("main.synthesize_speech", return_value=b"\xff\xfb\x90\x00" * 100)
     @patch("main.ask_gemini", return_value="Response")
