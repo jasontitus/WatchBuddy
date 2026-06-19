@@ -585,6 +585,31 @@ class TestAskGemini:
         assert isinstance(result, str)
         assert result  # non-empty fallback
 
+    @patch("main.time.sleep", return_value=None)
+    @patch("main.gemini_client")
+    def test_ask_gemini_retries_transient_failure(self, mock_client, _sleep):
+        """A first-attempt failure should be retried and succeed."""
+        from main import ask_gemini
+        ok = MagicMock()
+        ok.text = "recovered"
+        mock_client.models.generate_content.side_effect = [
+            RuntimeError("transient 503"),
+            ok,
+        ]
+        result = ask_gemini("Hello")
+        assert result == "recovered"
+        assert mock_client.models.generate_content.call_count == 2
+
+    @patch("main.time.sleep", return_value=None)
+    @patch("main.gemini_client")
+    def test_ask_gemini_raises_after_exhausting_retries(self, mock_client, _sleep):
+        """Persistent failure should propagate (endpoint maps it to 500)."""
+        from main import ask_gemini, LLM_MAX_ATTEMPTS
+        mock_client.models.generate_content.side_effect = RuntimeError("down")
+        with pytest.raises(RuntimeError):
+            ask_gemini("Hello")
+        assert mock_client.models.generate_content.call_count == LLM_MAX_ATTEMPTS
+
     @patch("main.gemini_client")
     def test_ask_gemini_skips_malformed_history_entries(self, mock_client):
         """History entries missing content should be skipped, not crash."""

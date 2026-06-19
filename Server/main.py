@@ -34,6 +34,7 @@ MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
 MAX_HISTORY_TURNS = 10  # cap conversation context sent to the LLM
 MAX_TTS_CHARS = 2000  # guard against runaway synthesis
 FFMPEG_TIMEOUT = int(os.getenv("FFMPEG_TIMEOUT", "30"))
+LLM_MAX_ATTEMPTS = 2  # retry transient Gemini failures once
 
 DEVICE = os.getenv("DEVICE", "cpu")
 COMPUTE_TYPE = "float16" if DEVICE == "cuda" else "int8"
@@ -178,11 +179,25 @@ def ask_gemini(text: str, history: list = None) -> str:
             contents.append({"role": role, "parts": [{"text": content}]})
     contents.append({"role": "user", "parts": [{"text": text}]})
 
-    response = gemini_client.models.generate_content(
-        model=GEMINI_MODEL,
-        contents=contents,
-        config=GEMINI_CONFIG,
-    )
+    # Retry transient failures (network blips, 5xx) with a short backoff.
+    last_error = None
+    for attempt in range(LLM_MAX_ATTEMPTS):
+        try:
+            response = gemini_client.models.generate_content(
+                model=GEMINI_MODEL,
+                contents=contents,
+                config=GEMINI_CONFIG,
+            )
+            break
+        except Exception as e:  # noqa: BLE001 - retry any transient API error
+            last_error = e
+            if attempt < LLM_MAX_ATTEMPTS - 1:
+                logger.warning(f"[LLM] Attempt {attempt + 1} failed ({type(e).__name__}), retrying...")
+                time.sleep(0.5 * (attempt + 1))
+    else:
+        # All attempts exhausted; propagate so the endpoint returns a 500.
+        raise last_error
+
     # response.text is None when the model returns no/blocked content.
     reply = (response.text or "").strip()
     if not reply:
