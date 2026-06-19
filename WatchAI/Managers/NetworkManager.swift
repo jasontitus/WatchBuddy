@@ -204,8 +204,18 @@ final class NetworkManager: NSObject, ObservableObject {
                     let detail = code.map { "HTTP \($0)" }
                     completion(.failure(NetworkError.serverError(detail: detail))); return
                 }
-                let responseText = http.value(forHTTPHeaderField: "X-Response-Text") ?? ""
-                let questionText = http.value(forHTTPHeaderField: "X-Question-Text") ?? ""
+                // The server returns an empty 200 body when STT produced no text
+                // (silence / unintelligible audio). Surface a friendly message
+                // instead of writing a 0-byte file that fails to play.
+                if data.isEmpty {
+                    completion(.failure(NetworkError.emptyTranscription)); return
+                }
+                // Server percent-encodes these headers so non-ASCII text (em-dashes,
+                // accents, emoji) survives Latin-1 header transport intact.
+                let rawResponse = http.value(forHTTPHeaderField: "X-Response-Text") ?? ""
+                let rawQuestion = http.value(forHTTPHeaderField: "X-Question-Text") ?? ""
+                let responseText = rawResponse.removingPercentEncoding ?? rawResponse
+                let questionText = rawQuestion.removingPercentEncoding ?? rawQuestion
                 self.saveAndReturn(data: data, text: responseText, questionText: questionText, completion: completion)
             }
         }

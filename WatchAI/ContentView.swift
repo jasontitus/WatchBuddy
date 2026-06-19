@@ -376,7 +376,7 @@ struct ContentView: View {
                 }
                 if !a.isEmpty {
                     chatMessages.append(ChatMessage(role: "assistant", text: a, audioURL: response.audioURL))
-                    conversationHistory.append((question: q, answer: a))
+                    appendHistory(question: q, answer: a)
                 }
                 appState = .playing
                 playingMessageID = chatMessages.last?.id
@@ -385,6 +385,17 @@ struct ContentView: View {
                 errorMessage = error.localizedDescription
                 appState = .error
             }
+        }
+    }
+
+    /// Most recent turns of context to send with each request. Bounds request
+    /// size and cost; the server enforces its own cap too.
+    private let maxHistoryTurns = 10
+
+    private func appendHistory(question: String, answer: String) {
+        conversationHistory.append((question: question, answer: answer))
+        if conversationHistory.count > maxHistoryTurns {
+            conversationHistory.removeFirst(conversationHistory.count - maxHistoryTurns)
         }
     }
 
@@ -400,7 +411,7 @@ struct ContentView: View {
             switch result {
             case .success(let response):
                 chatMessages.append(ChatMessage(role: "assistant", text: response))
-                conversationHistory.append((question: text, answer: response))
+                appendHistory(question: text, answer: response)
                 appState = .idle
             case .failure(let error):
                 errorMessage = error.localizedDescription

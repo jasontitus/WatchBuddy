@@ -41,6 +41,17 @@ threads without synchronization, and a few error paths can crash a request.
 | W2 | Performance / cost | `conversationHistory` grows without bound across "continue" turns and is re-sent every request. | Cap to the last N turns on the client too. |
 | W3 | Reliability | A stop tapped immediately after record yields a tiny/empty file that still round-trips to the server. | (Documented; server now returns the friendly empty-transcription path.) |
 
+> **Note on targets:** the repo contains **two** Swift apps, and both ship to
+> users: the standalone watch app (`WatchAIWatch Watch App/`) and a full iOS
+> companion app (`WatchAI/`) with its own chat UI and a duplicate copy of the
+> manager classes. (The README describes `WatchAI/` as a placeholder, which is
+> stale — it's a working app.) Because both call `/v1/chat` and read the
+> `X-Response-Text`/`X-Question-Text` headers, the W1 (empty-audio) and S11
+> (percent-decode) fixes were applied to **both** `NetworkManager.swift` copies,
+> and the W2 history cap to both `ContentView.swift` files. Any future change to
+> the shared networking/audio logic must be mirrored across both targets (or
+> the duplication factored into a shared target).
+
 ## Testing
 
 Server changes are covered by `Server/test_main.py` (extended). Run:
