@@ -27,25 +27,34 @@ Supported LLM providers in BYOK mode: Gemini, OpenAI, Anthropic.
 ## Project Structure
 
 ```
-WatchAI/                          # iOS companion app (required wrapper for App Store)
+Shared/                           # Code compiled into BOTH the iOS and watch targets
+  Managers/
+    NetworkManager.swift          # Dual-path networking (trusted vs BYOK)
+    AudioRecorderManager.swift    # M4A recording via AVAudioRecorder (#if os() for platform bits)
+    AudioPlayerManager.swift      # MP3 playback via AVAudioPlayer
+    KeychainManager.swift         # Secure API key storage
+
+WatchAI/                          # iOS companion app (full voice + text chat UI)
   WatchAIApp.swift                # App entry point
-  ContentView.swift               # Placeholder UI directing users to the watch
+  ContentView.swift               # Chat UI — voice + typed messages
+  SettingsView.swift / ConsentView.swift
 
 WatchAIWatch Watch App/           # Standalone watchOS app
   WatchAIWatchApp.swift           # App entry point
   ContentView.swift               # Main UI — mic, stop, play buttons
-  SettingsView.swift              # Server URL, mode toggle, provider picker, API key
+  SettingsView.swift / ConsentView.swift
   Managers/
-    NetworkManager.swift          # Dual-path networking (trusted vs BYOK)
-    AudioRecorderManager.swift    # M4A recording via AVAudioRecorder
-    AudioPlayerManager.swift      # MP3 playback via AVPlayer
-    SessionManager.swift          # WKExtendedRuntimeSession for background audio
-    KeychainManager.swift         # Secure API key storage
+    SessionManager.swift          # WKExtendedRuntimeSession for background audio (watch-only)
 
 docs/                             # GitHub Pages
   index.html                      # Support page
   privacy.html                    # Privacy policy
+  REVIEW.md                       # Reliability/perf/accuracy review notes
 ```
+
+> The shared managers live in `Shared/`, which is added to both app targets via
+> Xcode synchronized folders — edit a manager once and both apps pick it up.
+> Platform-specific code is fenced with `#if os(iOS)` / `#if os(watchOS)`.
 
 ## Server
 

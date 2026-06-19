@@ -30,14 +30,12 @@ final class NetworkManager: NSObject, ObservableObject {
         KeychainManager.load(key: "api_key") ?? ""
     }
 
-    /// Cached access key hash fetched from the server's /health endpoint.
     private var cachedAccessKeyHash: String?
 
-    private let systemPrompt = "You are a helpful voice assistant on an Apple Watch. Be concise. Reply in 1-2 short sentences. Never use markdown or special formatting."
+    private let systemPrompt = "You are a helpful voice assistant. Be concise. Reply in 1-2 short sentences. Never use markdown or special formatting."
 
     // MARK: - Access key hash
 
-    /// Fetch the access key hash from the server and cache it.
     func fetchAccessKeyHash(completion: ((Bool) -> Void)? = nil) {
         guard let endpoint = URL(string: "\(serverURL)/health") else {
             completion?(false); return
@@ -55,7 +53,6 @@ final class NetworkManager: NSObject, ObservableObject {
         task.resume()
     }
 
-    /// Check if the stored key is the trusted access key by comparing SHA-256 hashes locally.
     private var isTrustedKey: Bool {
         guard let serverHash = cachedAccessKeyHash, !serverHash.isEmpty else { return false }
         let key = apiKey
@@ -93,7 +90,75 @@ final class NetworkManager: NSObject, ObservableObject {
         }
     }
 
-    // MARK: - Path 1: Full pipeline (trusted friend)
+    func sendText(text: String, history: [(question: String, answer: String)] = [], completion: @escaping (Result<String, Error>) -> Void) {
+        let key = apiKey
+        guard !key.isEmpty else {
+            completion(.failure(NetworkError.noAPIKey)); return
+        }
+
+        let proceed = {
+            if self.isTrustedKey {
+                self.textPipeline(text: text, history: history, completion: completion)
+            } else {
+                self.callLLM(text: text, provider: self.aiProvider, apiKey: key, history: history, completion: completion)
+            }
+        }
+
+        if cachedAccessKeyHash == nil {
+            fetchAccessKeyHash { _ in proceed() }
+        } else {
+            proceed()
+        }
+    }
+
+    // MARK: - Text pipeline (trusted, server LLM)
+
+    private func textPipeline(text: String, history: [(question: String, answer: String)], completion: @escaping (Result<String, Error>) -> Void) {
+        guard let endpoint = URL(string: "\(serverURL)/v1/text") else {
+            completion(.failure(NetworkError.invalidURL)); return
+        }
+
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        var body: [String: String] = ["text": text, "api_key": apiKey]
+
+        if !history.isEmpty {
+            var contextMessages: [[String: String]] = []
+            for turn in history {
+                contextMessages.append(["role": "user", "content": turn.question])
+                contextMessages.append(["role": "assistant", "content": turn.answer])
+            }
+            if let contextData = try? JSONSerialization.data(withJSONObject: contextMessages),
+               let contextString = String(data: contextData, encoding: .utf8) {
+                body["context"] = contextString
+            }
+        }
+
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+
+        let task = urlSession.dataTask(with: request) { data, response, error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    completion(.failure(NetworkError.serverError(detail: error.localizedDescription))); return
+                }
+                guard let data = data, let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+                    let code = (response as? HTTPURLResponse)?.statusCode
+                    let detail = code.map { "HTTP \($0)" }
+                    completion(.failure(NetworkError.serverError(detail: detail))); return
+                }
+                guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let responseText = json["response_text"] as? String else {
+                    completion(.failure(NetworkError.serverError(detail: "Invalid response"))); return
+                }
+                completion(.success(responseText))
+            }
+        }
+        task.resume()
+    }
+
+    // MARK: - Path 1: Full pipeline (trusted)
 
     private func fullPipeline(fileURL: URL, history: [(question: String, answer: String)], completion: @escaping (Result<VoiceResponse, Error>) -> Void) {
         guard let endpoint = URL(string: "\(serverURL)/v1/chat") else {
@@ -114,7 +179,6 @@ final class NetworkManager: NSObject, ObservableObject {
         var body = Data()
         body.appendFormField(boundary: boundary, name: "api_key", value: apiKey)
 
-        // Send conversation history as JSON context
         if !history.isEmpty {
             var contextMessages: [[String: String]] = []
             for turn in history {
@@ -140,15 +204,25 @@ final class NetworkManager: NSObject, ObservableObject {
                     let detail = code.map { "HTTP \($0)" }
                     completion(.failure(NetworkError.serverError(detail: detail))); return
                 }
-                let responseText = http.value(forHTTPHeaderField: "X-Response-Text") ?? ""
-                let questionText = http.value(forHTTPHeaderField: "X-Question-Text") ?? ""
+                // The server returns an empty 200 body when STT produced no text
+                // (silence / unintelligible audio). Surface a friendly message
+                // instead of writing a 0-byte file that fails to play.
+                if data.isEmpty {
+                    completion(.failure(NetworkError.emptyTranscription)); return
+                }
+                // Server percent-encodes these headers so non-ASCII text (em-dashes,
+                // accents, emoji) survives Latin-1 header transport intact.
+                let rawResponse = http.value(forHTTPHeaderField: "X-Response-Text") ?? ""
+                let rawQuestion = http.value(forHTTPHeaderField: "X-Question-Text") ?? ""
+                let responseText = rawResponse.removingPercentEncoding ?? rawResponse
+                let questionText = rawQuestion.removingPercentEncoding ?? rawQuestion
                 self.saveAndReturn(data: data, text: responseText, questionText: questionText, completion: completion)
             }
         }
         task.resume()
     }
 
-    // MARK: - Path 2: Split pipeline (BYOK - key never touches server)
+    // MARK: - Path 2: Split pipeline (BYOK)
 
     private func splitPipeline(fileURL: URL, apiKey: String, history: [(question: String, answer: String)], completion: @escaping (Result<VoiceResponse, Error>) -> Void) {
         callSTT(fileURL: fileURL) { [weak self] result in
@@ -249,7 +323,7 @@ final class NetworkManager: NSObject, ObservableObject {
         task.resume()
     }
 
-    // MARK: - Direct LLM calls (key stays on watch)
+    // MARK: - Direct LLM calls (key stays on device)
 
     private func callLLM(text: String, provider: String, apiKey: String, history: [(question: String, answer: String)] = [], retries: Int = 2, completion: @escaping (Result<String, Error>) -> Void) {
         let singleCall: (@escaping (Result<String, Error>) -> Void) -> Void = { cb in

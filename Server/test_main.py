@@ -29,6 +29,7 @@ os.environ.setdefault("GOOGLE_API_KEY", "fake-key")
 
 import io
 import json
+from urllib.parse import unquote
 import pytest
 from fastapi.testclient import TestClient
 
@@ -103,7 +104,7 @@ class TestChat:
         )
         assert r.status_code == 200
         assert r.headers["content-type"] == "audio/mpeg"
-        assert r.headers["x-response-text"] == "Hello there!"
+        assert unquote(r.headers["x-response-text"]) == "Hello there!"
         assert len(r.content) > 0
 
     @patch("main.synthesize_speech", return_value=b"\xff\xfb\x90\x00" * 100)
@@ -117,7 +118,7 @@ class TestChat:
             data={"api_key": VALID_KEY},
         )
         assert r.status_code == 200
-        assert r.headers["x-question-text"] == "Hi"
+        assert unquote(r.headers["x-question-text"]) == "Hi"
 
     @patch("main.synthesize_speech", return_value=b"\xff\xfb\x90\x00" * 100)
     @patch("main.ask_gemini", return_value="Paris is the capital.")
@@ -185,10 +186,28 @@ class TestChat:
             data={"api_key": VALID_KEY, "context": context},
         )
         assert r.status_code == 200
-        assert r.headers["x-question-text"] == "And what about dessert?"
-        assert r.headers["x-response-text"] == "Response after multi-turn"
+        assert unquote(r.headers["x-question-text"]) == "And what about dessert?"
+        assert unquote(r.headers["x-response-text"]) == "Response after multi-turn"
         call_kwargs = mock_llm.call_args
         assert len(call_kwargs[1]["history"]) == 4
+
+    @patch("main.synthesize_speech", return_value=b"\xff\xfb\x90\x00" * 100)
+    @patch("main.ask_gemini", return_value="Café — 30°C, naïve résumé 🌞")
+    @patch("main.transcribe", return_value="Comment ça va?")
+    @patch("main.transcode_to_wav", return_value=b"RIFF" + b"\x00" * 100)
+    def test_chat_non_ascii_headers_round_trip(self, mock_transcode, mock_stt, mock_llm, mock_tts):
+        """Non-Latin-1 text must survive the response headers intact."""
+        r = client.post(
+            "/v1/chat",
+            files={"file": ("test.m4a", io.BytesIO(FAKE_AUDIO), "audio/mp4")},
+            data={"api_key": VALID_KEY},
+        )
+        assert r.status_code == 200
+        # Raw header is ASCII-safe (percent-encoded)...
+        assert r.headers["x-response-text"].isascii()
+        # ...and decodes losslessly.
+        assert unquote(r.headers["x-response-text"]) == "Café — 30°C, naïve résumé 🌞"
+        assert unquote(r.headers["x-question-text"]) == "Comment ça va?"
 
     @patch("main.transcribe", return_value="   ")
     @patch("main.transcode_to_wav", return_value=b"RIFF" + b"\x00" * 100)
@@ -416,16 +435,16 @@ class TestChatAuth:
         )
         assert r.status_code == 422
 
-    def test_chat_empty_api_key_returns_422(self):
-        # An empty-string form field is treated as absent by the multipart
-        # parser, so FastAPI rejects the required api_key with 422 (before the
-        # handler's access-key check that would otherwise return 401).
+    def test_chat_empty_api_key_is_rejected(self):
         r = client.post(
             "/v1/chat",
             files={"file": ("test.m4a", io.BytesIO(FAKE_AUDIO), "audio/mp4")},
             data={"api_key": ""},
         )
-        assert r.status_code == 422
+        # An empty key is never valid: rejected as 401 (handler) or 422 (form
+        # validation, depending on python-multipart version). Either way it must
+        # not reach the pipeline.
+        assert r.status_code in (401, 422)
 
     @patch("main.synthesize_speech", return_value=b"\xff\xfb\x90\x00" * 100)
     @patch("main.ask_gemini", return_value="Response")
@@ -467,11 +486,11 @@ class TestSTTNoAuth:
 
 class TestTTSEdgeCases:
     @patch("main.synthesize_speech", return_value=b"\xff\xfb\x90\x00" * 10)
-    def test_tts_with_whitespace_only_text(self, mock_tts):
-        """TTS with whitespace-only text still calls synthesize."""
+    def test_tts_with_whitespace_only_text_returns_400(self, mock_tts):
+        """Whitespace-only text has no speech to synthesize and is rejected."""
         r = client.post("/v1/tts", json={"text": "   "})
-        assert r.status_code == 200
-        mock_tts.assert_called_once_with("   ")
+        assert r.status_code == 400
+        mock_tts.assert_not_called()
 
     def test_tts_no_body_returns_422(self):
         r = client.post("/v1/tts")
@@ -482,6 +501,15 @@ class TestTTSEdgeCases:
         r = client.post("/v1/tts", json={"text": "Hello"})
         assert r.status_code == 200
         assert "response.mp3" in r.headers.get("content-disposition", "")
+
+    @patch("main.synthesize_speech", return_value=b"\xff\xfb\x90\x00" * 100)
+    def test_tts_truncates_overly_long_text(self, mock_tts):
+        from main import MAX_TTS_CHARS
+        r = client.post("/v1/tts", json={"text": "a" * (MAX_TTS_CHARS + 500)})
+        assert r.status_code == 200
+        # synthesize_speech is called with text capped at MAX_TTS_CHARS
+        called_text = mock_tts.call_args[0][0]
+        assert len(called_text) == MAX_TTS_CHARS
 
 
 # ──────────────────────────────────────────────
@@ -544,6 +572,121 @@ class TestAskGemini:
         call_args = mock_client.models.generate_content.call_args
         contents = call_args[1]["contents"]
         assert len(contents) == 1  # empty list is falsy, no history added
+
+    @patch("main.gemini_client")
+    def test_ask_gemini_none_text_returns_fallback(self, mock_client):
+        """A blocked/empty Gemini response (text=None) must not crash."""
+        from main import ask_gemini
+        mock_response = MagicMock()
+        mock_response.text = None  # Gemini returns None when content is blocked
+        mock_client.models.generate_content.return_value = mock_response
+
+        result = ask_gemini("Hello")
+        assert isinstance(result, str)
+        assert result  # non-empty fallback
+
+    @patch("main.time.sleep", return_value=None)
+    @patch("main.gemini_client")
+    def test_ask_gemini_retries_transient_failure(self, mock_client, _sleep):
+        """A first-attempt failure should be retried and succeed."""
+        from main import ask_gemini
+        ok = MagicMock()
+        ok.text = "recovered"
+        mock_client.models.generate_content.side_effect = [
+            RuntimeError("transient 503"),
+            ok,
+        ]
+        result = ask_gemini("Hello")
+        assert result == "recovered"
+        assert mock_client.models.generate_content.call_count == 2
+
+    @patch("main.time.sleep", return_value=None)
+    @patch("main.gemini_client")
+    def test_ask_gemini_raises_after_exhausting_retries(self, mock_client, _sleep):
+        """Persistent failure should propagate (endpoint maps it to 500)."""
+        from main import ask_gemini, LLM_MAX_ATTEMPTS
+        mock_client.models.generate_content.side_effect = RuntimeError("down")
+        with pytest.raises(RuntimeError):
+            ask_gemini("Hello")
+        assert mock_client.models.generate_content.call_count == LLM_MAX_ATTEMPTS
+
+    @patch("main.gemini_client")
+    def test_ask_gemini_skips_malformed_history_entries(self, mock_client):
+        """History entries missing content should be skipped, not crash."""
+        from main import ask_gemini
+        mock_response = MagicMock()
+        mock_response.text = "ok"
+        mock_client.models.generate_content.return_value = mock_response
+
+        history = [
+            {"role": "user", "content": "Q1"},
+            {"role": "assistant"},          # missing content
+            {"role": "user", "content": ""},  # empty content
+            {"role": "assistant", "content": "A1"},
+        ]
+        ask_gemini("Q2", history=history)
+        contents = mock_client.models.generate_content.call_args[1]["contents"]
+        # Q1, A1, then current Q2 — malformed entries dropped
+        assert len(contents) == 3
+
+
+# ──────────────────────────────────────────────
+# parse_history validation
+# ──────────────────────────────────────────────
+
+class TestParseHistory:
+    def test_none_for_empty_string(self):
+        from main import parse_history
+        assert parse_history("") is None
+
+    def test_none_for_invalid_json(self):
+        from main import parse_history
+        assert parse_history("not json{{{") is None
+
+    def test_none_for_non_list(self):
+        from main import parse_history
+        assert parse_history(json.dumps({"role": "user", "content": "hi"})) is None
+
+    def test_drops_malformed_entries(self):
+        from main import parse_history
+        ctx = json.dumps([
+            {"role": "user", "content": "keep"},
+            "a string, not a dict",
+            {"role": "assistant"},        # no content
+            {"content": "  "},            # blank content
+            {"role": "assistant", "content": "keep2"},
+        ])
+        result = parse_history(ctx)
+        assert result == [
+            {"role": "user", "content": "keep"},
+            {"role": "assistant", "content": "keep2"},
+        ]
+
+    def test_caps_history_length(self):
+        from main import parse_history, MAX_HISTORY_TURNS
+        msgs = [{"role": "user", "content": f"m{i}"} for i in range(100)]
+        result = parse_history(json.dumps(msgs))
+        assert len(result) == MAX_HISTORY_TURNS * 2
+        # Most recent messages are kept
+        assert result[-1]["content"] == "m99"
+
+
+# ──────────────────────────────────────────────
+# verify_access_key
+# ──────────────────────────────────────────────
+
+class TestVerifyAccessKey:
+    def test_correct_key(self):
+        from main import verify_access_key
+        assert verify_access_key(VALID_KEY) is True
+
+    def test_wrong_key(self):
+        from main import verify_access_key
+        assert verify_access_key("nope") is False
+
+    def test_empty_key(self):
+        from main import verify_access_key
+        assert verify_access_key("") is False
 
 
 # ──────────────────────────────────────────────
