@@ -480,6 +480,40 @@ class TestSTTNoAuth:
         assert r.json()["text"] == "No key needed"
 
 
+class TestOptionalSTTTTSAuth:
+    """REQUIRE_AUTH_STT_TTS=1 gates /v1/stt and /v1/tts behind the access key."""
+
+    def test_stt_rejects_missing_key_when_required(self):
+        with patch("main.REQUIRE_AUTH_STT_TTS", True):
+            r = client.post(
+                "/v1/stt",
+                files={"file": ("test.m4a", io.BytesIO(FAKE_AUDIO), "audio/mp4")},
+            )
+        assert r.status_code == 401
+
+    @patch("main.transcribe", return_value="Authed")
+    @patch("main.transcode_to_wav", return_value=b"RIFF" + b"\x00" * 100)
+    def test_stt_accepts_valid_key_when_required(self, mock_t, mock_s):
+        with patch("main.REQUIRE_AUTH_STT_TTS", True):
+            r = client.post(
+                "/v1/stt",
+                files={"file": ("test.m4a", io.BytesIO(FAKE_AUDIO), "audio/mp4")},
+                data={"api_key": VALID_KEY},
+            )
+        assert r.status_code == 200
+
+    def test_tts_rejects_missing_key_when_required(self):
+        with patch("main.REQUIRE_AUTH_STT_TTS", True):
+            r = client.post("/v1/tts", json={"text": "Hello"})
+        assert r.status_code == 401
+
+    @patch("main.synthesize_speech", return_value=b"\xff\xfb\x90\x00" * 100)
+    def test_tts_accepts_valid_key_when_required(self, mock_tts):
+        with patch("main.REQUIRE_AUTH_STT_TTS", True):
+            r = client.post("/v1/tts", json={"text": "Hello", "api_key": VALID_KEY})
+        assert r.status_code == 200
+
+
 # ──────────────────────────────────────────────
 # TTS edge cases
 # ──────────────────────────────────────────────
@@ -712,6 +746,36 @@ class TestBoundaryEdgeCases:
             files={"file": ("test.m4a", io.BytesIO(data), "audio/mp4")},
         )
         assert r.status_code == 200
+
+    def test_oversized_declared_body_returns_413(self):
+        """The middleware rejects an oversized Content-Length before parsing."""
+        from main import MAX_BODY_BYTES
+        r = client.post(
+            "/v1/stt",
+            content=b"x",
+            headers={
+                "Content-Length": str(MAX_BODY_BYTES + 1),
+                "Content-Type": "application/octet-stream",
+            },
+        )
+        assert r.status_code == 413
+
+    @patch("main.ask_gemini", return_value="ok")
+    def test_text_chat_too_long_returns_400(self, mock_llm):
+        from main import MAX_TEXT_CHARS
+        r = client.post(
+            "/v1/text",
+            json={"text": "a" * (MAX_TEXT_CHARS + 1), "api_key": VALID_KEY},
+        )
+        assert r.status_code == 400
+        mock_llm.assert_not_called()
+
+    def test_parse_history_truncates_long_messages(self):
+        from main import parse_history, MAX_HISTORY_MSG_CHARS
+        ctx = json.dumps([{"role": "user", "content": "x" * (MAX_HISTORY_MSG_CHARS * 3)}])
+        history = parse_history(ctx)
+        assert history is not None
+        assert len(history[0]["content"]) == MAX_HISTORY_MSG_CHARS
 
     def test_unknown_endpoint_returns_404(self):
         r = client.get("/v1/nonexistent")

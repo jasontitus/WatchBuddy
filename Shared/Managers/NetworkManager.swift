@@ -30,7 +30,13 @@ final class NetworkManager: NSObject, ObservableObject {
         KeychainManager.load(key: "api_key") ?? ""
     }
 
-    private var cachedAccessKeyHash: String?
+    // Written from URLSession callback threads, read from callers on others.
+    private let accessKeyHashLock = NSLock()
+    private var _cachedAccessKeyHash: String?
+    private var cachedAccessKeyHash: String? {
+        get { accessKeyHashLock.lock(); defer { accessKeyHashLock.unlock() }; return _cachedAccessKeyHash }
+        set { accessKeyHashLock.lock(); defer { accessKeyHashLock.unlock() }; _cachedAccessKeyHash = newValue }
+    }
 
     private let systemPrompt = "You are a helpful voice assistant. Be concise. Reply in 1-2 short sentences. Never use markdown or special formatting."
 
@@ -352,13 +358,16 @@ final class NetworkManager: NSObject, ObservableObject {
     }
 
     private func callGemini(text: String, apiKey: String, history: [(question: String, answer: String)] = [], completion: @escaping (Result<String, Error>) -> Void) {
-        guard let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=\(apiKey)") else {
+        guard let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent") else {
             completion(.failure(NetworkError.invalidURL)); return
         }
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        // Key goes in a header, not the URL: query strings leak into URL caches,
+        // proxy logs, and error metadata.
+        request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
 
         var contents: [[String: Any]] = []
         for turn in history {

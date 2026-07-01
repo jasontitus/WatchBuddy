@@ -33,6 +33,11 @@ logger = logging.getLogger("watchai")
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
 MAX_HISTORY_TURNS = 10  # cap conversation context sent to the LLM
 MAX_TTS_CHARS = 2000  # guard against runaway synthesis
+MAX_TEXT_CHARS = 4000  # cap /v1/text input sent to the LLM
+MAX_HISTORY_MSG_CHARS = 2000  # cap each history message sent to the LLM
+# Reject request bodies larger than the upload cap plus multipart/JSON overhead,
+# before the framework buffers them to disk/RAM.
+MAX_BODY_BYTES = MAX_UPLOAD_BYTES + 1024 * 1024
 FFMPEG_TIMEOUT = int(os.getenv("FFMPEG_TIMEOUT", "30"))
 LLM_MAX_ATTEMPTS = 2  # retry transient Gemini failures once
 
@@ -66,6 +71,11 @@ SYSTEM_SAMPLE_RATE = 24000
 ACCESS_KEY = os.getenv("ACCESS_KEY", "")
 ACCESS_KEY_HASH = hashlib.sha256(ACCESS_KEY.encode()).hexdigest() if ACCESS_KEY else ""
 
+# /v1/stt and /v1/tts ship unauthenticated for BYOK clients. Set
+# REQUIRE_AUTH_STT_TTS=1 to demand the access key on them too (breaks BYOK
+# voice mode on clients that don't send it).
+REQUIRE_AUTH_STT_TTS = os.getenv("REQUIRE_AUTH_STT_TTS", "0").lower() in ("1", "true", "yes")
+
 if not ACCESS_KEY:
     logger.warning("ACCESS_KEY is not set — trusted-mode endpoints (/v1/chat, /v1/text) will reject all requests.")
 if not os.getenv("GOOGLE_API_KEY"):
@@ -77,6 +87,31 @@ def verify_access_key(provided: str) -> bool:
     if not ACCESS_KEY or not provided:
         return False
     return hmac.compare_digest(provided, ACCESS_KEY)
+
+
+@app.middleware("http")
+async def limit_body_size(request, call_next):
+    """Reject oversized requests up front, before multipart parsing buffers them."""
+    content_length = request.headers.get("content-length")
+    if content_length and content_length.isdigit() and int(content_length) > MAX_BODY_BYTES:
+        return JSONResponse(status_code=413, content={"error": "Request body too large"})
+    return await call_next(request)
+
+
+async def read_upload_capped(file: UploadFile) -> bytes | None:
+    """Read an upload in chunks, returning None once it exceeds MAX_UPLOAD_BYTES.
+
+    Avoids buffering the whole (attacker-controlled) body into memory before
+    the size check.
+    """
+    chunks = []
+    total = 0
+    while chunk := await file.read(256 * 1024):
+        total += len(chunk)
+        if total > MAX_UPLOAD_BYTES:
+            return None
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 def parse_history(context: str) -> list | None:
@@ -105,7 +140,7 @@ def parse_history(context: str) -> list | None:
         if not isinstance(content, str) or not content.strip():
             continue
         role = "assistant" if msg.get("role") == "assistant" else "user"
-        cleaned.append({"role": role, "content": content})
+        cleaned.append({"role": role, "content": content[:MAX_HISTORY_MSG_CHARS]})
 
     if not cleaned:
         return None
@@ -115,6 +150,7 @@ def parse_history(context: str) -> list | None:
 
 class TTSRequest(BaseModel):
     text: str
+    api_key: str = ""  # only checked when REQUIRE_AUTH_STT_TTS is set
 
 
 class TextChatRequest(BaseModel):
@@ -256,12 +292,12 @@ async def chat(file: UploadFile = File(...), api_key: str = Form(...), context: 
         return JSONResponse(status_code=401, content={"error": "Invalid access key"})
 
     try:
-        input_bytes = await file.read()
+        input_bytes = await read_upload_capped(file)
+        if input_bytes is None:
+            return JSONResponse(status_code=400, content={"error": f"File too large. Max {MAX_UPLOAD_BYTES} bytes."})
         if not input_bytes:
             return JSONResponse(status_code=400, content={"error": "Empty audio file"})
-        if len(input_bytes) > MAX_UPLOAD_BYTES:
-            return JSONResponse(status_code=400, content={"error": f"File too large ({len(input_bytes)} bytes). Max {MAX_UPLOAD_BYTES} bytes."})
-        logger.info(f"[Chat] Received {len(input_bytes)} bytes: {file.filename}")
+        logger.info(f"[Chat] Received {len(input_bytes)} bytes: {file.filename!r}")
 
         # Parse conversation history if provided
         history = parse_history(context)
@@ -319,6 +355,8 @@ async def text_chat(req: TextChatRequest):
     try:
         if not req.text.strip():
             return JSONResponse(status_code=400, content={"error": "Empty text"})
+        if len(req.text) > MAX_TEXT_CHARS:
+            return JSONResponse(status_code=400, content={"error": f"Text too long. Max {MAX_TEXT_CHARS} characters."})
         logger.info(f"[TextChat] Received {len(req.text)} chars")
 
         history = parse_history(req.context)
@@ -336,15 +374,17 @@ async def text_chat(req: TextChatRequest):
 
 
 @app.post("/v1/stt")
-async def stt(file: UploadFile = File(...)):
-    """Speech-to-text only. No auth required (BYOK mode)."""
+async def stt(file: UploadFile = File(...), api_key: str = Form("")):
+    """Speech-to-text only. Auth optional (BYOK mode) unless REQUIRE_AUTH_STT_TTS."""
+    if REQUIRE_AUTH_STT_TTS and not verify_access_key(api_key):
+        return JSONResponse(status_code=401, content={"error": "Invalid access key"})
     try:
-        input_bytes = await file.read()
+        input_bytes = await read_upload_capped(file)
+        if input_bytes is None:
+            return JSONResponse(status_code=400, content={"error": f"File too large. Max {MAX_UPLOAD_BYTES} bytes."})
         if not input_bytes:
             return JSONResponse(status_code=400, content={"error": "Empty audio file"})
-        if len(input_bytes) > MAX_UPLOAD_BYTES:
-            return JSONResponse(status_code=400, content={"error": f"File too large ({len(input_bytes)} bytes). Max {MAX_UPLOAD_BYTES} bytes."})
-        logger.info(f"[STT] Received {len(input_bytes)} bytes: {file.filename}")
+        logger.info(f"[STT] Received {len(input_bytes)} bytes: {file.filename!r}")
 
         t0 = time.time()
         wav_bytes = await asyncio.to_thread(transcode_to_wav, input_bytes)
@@ -362,7 +402,9 @@ async def stt(file: UploadFile = File(...)):
 
 @app.post("/v1/tts")
 async def tts(req: TTSRequest):
-    """Text-to-speech only. No auth required (BYOK mode)."""
+    """Text-to-speech only. Auth optional (BYOK mode) unless REQUIRE_AUTH_STT_TTS."""
+    if REQUIRE_AUTH_STT_TTS and not verify_access_key(req.api_key):
+        return JSONResponse(status_code=401, content={"error": "Invalid access key"})
     try:
         if not req.text.strip():
             return JSONResponse(status_code=400, content={"error": "Empty text"})

@@ -11,6 +11,8 @@ enum KeychainManager {
         SecItemDelete(query as CFDictionary)
         var attributes = query
         attributes[kSecValueData as String] = data
+        // Device-only, unlocked-only: keeps the secret out of device backups.
+        attributes[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
         SecItemAdd(attributes as CFDictionary, nil)
     }
 
