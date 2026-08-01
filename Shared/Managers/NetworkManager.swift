@@ -27,7 +27,10 @@ final class NetworkManager: NSObject, ObservableObject {
     }
 
     private var apiKey: String {
-        KeychainManager.load(key: "api_key") ?? ""
+        // Trim on read so keys saved with stray whitespace by older builds
+        // still hash-match the server.
+        (KeychainManager.load(key: "api_key") ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     // Written from URLSession callback threads, read from callers on others.
@@ -57,6 +60,31 @@ final class NetworkManager: NSObject, ObservableObject {
             completion?(true)
         }
         task.resume()
+    }
+
+    enum KeyMode {
+        case noKey
+        case serverKey
+        case personalKey
+        case serverUnreachable
+    }
+
+    /// Re-fetches the server hash and reports how the stored key will be
+    /// used, so Settings can surface a mismatch instead of silently falling
+    /// back to BYOK. Completion runs on the main queue.
+    func checkKeyMode(completion: @escaping (KeyMode) -> Void) {
+        let finish: (KeyMode) -> Void = { mode in
+            DispatchQueue.main.async { completion(mode) }
+        }
+        guard !apiKey.isEmpty else { finish(.noKey); return }
+        fetchAccessKeyHash { [weak self] fetched in
+            guard let self else { return }
+            if !fetched {
+                finish(.serverUnreachable)
+            } else {
+                finish(self.isTrustedKey ? .serverKey : .personalKey)
+            }
+        }
     }
 
     private var isTrustedKey: Bool {
@@ -358,7 +386,7 @@ final class NetworkManager: NSObject, ObservableObject {
     }
 
     private func callGemini(text: String, apiKey: String, history: [(question: String, answer: String)] = [], completion: @escaping (Result<String, Error>) -> Void) {
-        guard let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent") else {
+        guard let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent") else {
             completion(.failure(NetworkError.invalidURL)); return
         }
 

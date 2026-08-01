@@ -58,10 +58,12 @@ _whisper_lock = threading.Lock()
 _kokoro_lock = threading.Lock()
 
 gemini_client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
 GEMINI_CONFIG = types.GenerateContentConfig(
     system_instruction="You are a helpful voice assistant on an Apple Watch. Be concise. Reply in 1-2 short sentences. Never use markdown or special formatting.",
-    thinking_config=types.ThinkingConfig(thinking_budget=0),
+    # gemini-3.6-flash rejects thinking_budget=0 (INVALID_ARGUMENT); 128 is the
+    # lowest accepted budget and keeps latency close to no-thinking.
+    thinking_config=types.ThinkingConfig(thinking_budget=128),
 )
 
 kokoro_pipeline = KPipeline(lang_code="a")
