@@ -31,6 +31,9 @@ logging.basicConfig(
 logger = logging.getLogger("watchai")
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
+# Clients downscale photos before upload; reject anything that suggests a raw
+# camera dump or abuse.
+ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"}
 MAX_HISTORY_TURNS = 10  # cap conversation context sent to the LLM
 MAX_TTS_CHARS = 2000  # guard against runaway synthesis
 MAX_TEXT_CHARS = 4000  # cap /v1/text input sent to the LLM
@@ -206,8 +209,9 @@ def transcribe(wav_bytes: bytes) -> str:
         os.unlink(tmp_path)
 
 
-def ask_gemini(text: str, history: list = None) -> str:
-    """Get a concise response from Gemini, optionally with conversation history."""
+def ask_gemini(text: str, history: list = None, image: tuple[bytes, str] | None = None) -> str:
+    """Get a concise response from Gemini, optionally with conversation history
+    and an (image_bytes, mime_type) attachment on the final user message."""
     contents = []
     if history:
         for msg in history:
@@ -216,7 +220,12 @@ def ask_gemini(text: str, history: list = None) -> str:
                 continue
             role = "model" if msg.get("role") == "assistant" else "user"
             contents.append({"role": role, "parts": [{"text": content}]})
-    contents.append({"role": "user", "parts": [{"text": text}]})
+    parts = []
+    if image is not None:
+        image_bytes, mime_type = image
+        parts.append({"inline_data": {"mime_type": mime_type, "data": image_bytes}})
+    parts.append({"text": text})
+    contents.append({"role": "user", "parts": parts})
 
     # Retry transient failures (network blips, 5xx) with a short backoff.
     last_error = None
@@ -373,6 +382,50 @@ async def text_chat(req: TextChatRequest):
     except Exception as e:
         logger.exception("[TextChat] Pipeline failed")
         return JSONResponse(status_code=500, content={"error": f"Text chat failed: {type(e).__name__}"})
+
+
+@app.post("/v1/image")
+async def image_chat(
+    file: UploadFile = File(...),
+    api_key: str = Form(...),
+    text: str = Form(""),
+    context: str = Form(""),
+):
+    """
+    Photo question for trusted users. Validates access key, sends the image
+    plus question to the LLM, returns text (no TTS).
+    """
+    if not verify_access_key(api_key):
+        return JSONResponse(status_code=401, content={"error": "Invalid access key"})
+
+    try:
+        mime_type = (file.content_type or "").lower()
+        if mime_type not in ALLOWED_IMAGE_TYPES:
+            return JSONResponse(status_code=400, content={"error": f"Unsupported image type {mime_type!r}"})
+
+        input_bytes = await read_upload_capped(file)
+        if input_bytes is None:
+            return JSONResponse(status_code=400, content={"error": f"File too large. Max {MAX_UPLOAD_BYTES} bytes."})
+        if not input_bytes:
+            return JSONResponse(status_code=400, content={"error": "Empty image file"})
+
+        question = text.strip()[:MAX_TEXT_CHARS] or "What's in this photo?"
+        logger.info(f"[Image] Received {len(input_bytes)} bytes ({mime_type}), question {len(question)} chars")
+
+        history = parse_history(context)
+        if history:
+            logger.info(f"[Image] Conversation history: {len(history)} messages")
+
+        t0 = time.time()
+        assistant_text = await asyncio.to_thread(
+            ask_gemini, question, history=history, image=(input_bytes, mime_type)
+        )
+        logger.info(f"[Image] Response {len(assistant_text)} chars ({time.time() - t0:.2f}s)")
+
+        return {"response_text": assistant_text}
+    except Exception as e:
+        logger.exception("[Image] Pipeline failed")
+        return JSONResponse(status_code=500, content={"error": f"Image chat failed: {type(e).__name__}"})
 
 
 @app.post("/v1/stt")

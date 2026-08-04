@@ -1,3 +1,4 @@
+import PhotosUI
 import SwiftUI
 
 enum AppState {
@@ -13,6 +14,7 @@ struct ChatMessage: Identifiable {
     let role: String // "user" or "assistant"
     let text: String
     var audioURL: URL? = nil
+    var image: UIImage? = nil
 }
 
 struct ContentView: View {
@@ -30,6 +32,8 @@ struct ContentView: View {
     @State private var textInput = ""
     @State private var errorMessage: String?
     @State private var playingMessageID: UUID?
+    @State private var photosPickerItem: PhotosPickerItem?
+    @State private var attachedImage: UIImage?
     @Environment(\.scenePhase) private var scenePhase
 
     private var isConfigured: Bool {
@@ -140,6 +144,20 @@ struct ContentView: View {
                 playingMessageID = nil
             }
         }
+        .onChange(of: photosPickerItem) { _, item in
+            guard let item else { return }
+            item.loadTransferable(type: Data.self) { result in
+                DispatchQueue.main.async {
+                    photosPickerItem = nil
+                    if case .success(let data?) = result, let image = UIImage(data: data) {
+                        attachedImage = image
+                    } else {
+                        errorMessage = "Could not load photo"
+                        appState = .error
+                    }
+                }
+            }
+        }
     }
 
     // MARK: - Empty state
@@ -184,9 +202,32 @@ struct ContentView: View {
             if appState == .recording {
                 recordingBar
             } else {
+                if let attachedImage {
+                    attachmentPreview(attachedImage)
+                }
                 textInputBar
             }
         }
+    }
+
+    private func attachmentPreview(_ image: UIImage) -> some View {
+        HStack(spacing: 10) {
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFill()
+                .frame(width: 44, height: 44)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+            Text("Photo attached — add a question or just send")
+                .font(.caption)
+                .foregroundColor(.secondary)
+            Spacer()
+            Button(action: { attachedImage = nil }) {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
     }
 
     private var recordingBar: some View {
@@ -225,6 +266,13 @@ struct ContentView: View {
 
     private var textInputBar: some View {
         HStack(spacing: 10) {
+            PhotosPicker(selection: $photosPickerItem, matching: .images) {
+                Image(systemName: "photo")
+                    .font(.system(size: 22))
+                    .foregroundColor(isBusy ? .gray : .blue)
+            }
+            .disabled(isBusy)
+
             TextField("Type a message...", text: $textInput)
                 .textFieldStyle(.roundedBorder)
                 .submitLabel(.send)
@@ -254,7 +302,7 @@ struct ContentView: View {
     }
 
     private var canSendText: Bool {
-        !textInput.trimmingCharacters(in: .whitespaces).isEmpty && !isBusy
+        (!textInput.trimmingCharacters(in: .whitespaces).isEmpty || attachedImage != nil) && !isBusy
     }
 
     // MARK: - Chat bubble
@@ -264,6 +312,13 @@ struct ContentView: View {
             if message.role == "user" { Spacer(minLength: 60) }
 
             VStack(alignment: message.role == "user" ? .trailing : .leading, spacing: 4) {
+                if let image = message.image {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(maxWidth: 220, maxHeight: 220)
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                }
                 Text(message.text)
                     .font(.body)
                     .textSelection(.enabled)
@@ -401,6 +456,11 @@ struct ContentView: View {
 
     private func sendTextMessage() {
         let text = textInput.trimmingCharacters(in: .whitespaces)
+
+        if let image = attachedImage {
+            sendPhotoMessage(image: image, text: text)
+            return
+        }
         guard !text.isEmpty else { return }
 
         textInput = ""
@@ -417,6 +477,46 @@ struct ContentView: View {
                 errorMessage = error.localizedDescription
                 appState = .error
             }
+        }
+    }
+
+    private func sendPhotoMessage(image: UIImage, text: String) {
+        let question = text.isEmpty ? "What's in this photo?" : text
+        guard let jpegData = downscaled(image).jpegData(compressionQuality: 0.7) else {
+            errorMessage = "Could not read photo"
+            appState = .error
+            return
+        }
+
+        textInput = ""
+        attachedImage = nil
+        chatMessages.append(ChatMessage(role: "user", text: question, image: image))
+        appState = .processing
+
+        network.sendImage(imageData: jpegData, text: question, history: conversationHistory) { result in
+            switch result {
+            case .success(let response):
+                chatMessages.append(ChatMessage(role: "assistant", text: response))
+                // The photo itself isn't resent with later turns; the answer
+                // text carries the context forward.
+                appendHistory(question: "[Photo] \(question)", answer: response)
+                appState = .idle
+            case .failure(let error):
+                errorMessage = error.localizedDescription
+                appState = .error
+            }
+        }
+    }
+
+    /// Cap the longest side so uploads stay small; Gemini doesn't benefit from
+    /// full-resolution camera images.
+    private func downscaled(_ image: UIImage, maxDimension: CGFloat = 1536) -> UIImage {
+        let largest = max(image.size.width, image.size.height)
+        guard largest > maxDimension else { return image }
+        let scale = maxDimension / largest
+        let newSize = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+        return UIGraphicsImageRenderer(size: newSize).image { _ in
+            image.draw(in: CGRect(origin: .zero, size: newSize))
         }
     }
 
@@ -445,6 +545,7 @@ struct ContentView: View {
         chatMessages = []
         conversationHistory = []
         textInput = ""
+        attachedImage = nil
         errorMessage = nil
         playingMessageID = nil
         appState = .idle

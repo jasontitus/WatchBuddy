@@ -375,6 +375,28 @@ final class NetworkManager: NSObject, ObservableObject {
         }
     }
 
+    /// Sends a photo (JPEG data, already downscaled by the caller) plus a
+    /// question. Trusted mode goes through the server; BYOK only works with
+    /// Gemini — the other providers' vision APIs aren't wired up.
+    func sendImage(imageData: Data, text: String, history: [(question: String, answer: String)] = [], completion: @escaping (Result<String, Error>) -> Void) {
+        let key = apiKey
+        guard !key.isEmpty else {
+            completion(.failure(NetworkError.noAPIKey)); return
+        }
+
+        resolveMode(key: key, onFailure: { completion(.failure($0)) }) {
+            if self.isTrustedKey {
+                self.imagePipeline(imageData: imageData, text: text, history: history, completion: completion)
+            } else if self.aiProvider == "gemini" {
+                self.callGeminiImage(imageData: imageData, text: text, apiKey: key, history: history, completion: completion)
+            } else {
+                DispatchQueue.main.async {
+                    completion(.failure(NetworkError.llmError(detail: "Photo questions need the Gemini provider (see Settings)")))
+                }
+            }
+        }
+    }
+
     // MARK: - Text pipeline (trusted, server LLM)
 
     private func textPipeline(text: String, history: [(question: String, answer: String)], completion: @escaping (Result<String, Error>) -> Void) {
@@ -403,6 +425,56 @@ final class NetworkManager: NSObject, ObservableObject {
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
         perform(request) { result in
+            DispatchQueue.main.async {
+                switch result {
+                case .failure(let error):
+                    completion(.failure(NetworkManager.networkFailure(error)))
+                case .success(let http):
+                    guard http.response.statusCode == 200 else {
+                        completion(.failure(NetworkError.serverError(detail: NetworkManager.detail(for: http)))); return
+                    }
+                    guard let json = try? JSONSerialization.jsonObject(with: http.data) as? [String: Any],
+                          let responseText = json["response_text"] as? String else {
+                        completion(.failure(NetworkError.serverError(detail: "Invalid response"))); return
+                    }
+                    completion(.success(responseText))
+                }
+            }
+        }
+    }
+
+    // MARK: - Image pipeline (trusted, server LLM)
+
+    private func imagePipeline(imageData: Data, text: String, history: [(question: String, answer: String)], completion: @escaping (Result<String, Error>) -> Void) {
+        guard let endpoint = URL(string: "\(serverURL)/v1/image") else {
+            completion(.failure(NetworkError.invalidURL)); return
+        }
+
+        let boundary = UUID().uuidString
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+
+        var body = Data()
+        body.appendFormField(boundary: boundary, name: "api_key", value: apiKey)
+        body.appendFormField(boundary: boundary, name: "text", value: text)
+
+        if !history.isEmpty {
+            var contextMessages: [[String: String]] = []
+            for turn in history {
+                contextMessages.append(["role": "user", "content": turn.question])
+                contextMessages.append(["role": "assistant", "content": turn.answer])
+            }
+            if let contextData = try? JSONSerialization.data(withJSONObject: contextMessages),
+               let contextString = String(data: contextData, encoding: .utf8) {
+                body.appendFormField(boundary: boundary, name: "context", value: contextString)
+            }
+        }
+
+        body.appendFormFile(boundary: boundary, name: "file", filename: "photo.jpg", contentType: "image/jpeg", data: imageData)
+        body.append("--\(boundary)--\r\n".data(using: .utf8)!)
+
+        perform(request, body: body) { result in
             DispatchQueue.main.async {
                 switch result {
                 case .failure(let error):
@@ -634,6 +706,51 @@ final class NetworkManager: NSObject, ObservableObject {
             contents.append(["role": "model", "parts": [["text": turn.answer]]])
         }
         contents.append(["role": "user", "parts": [["text": text]]])
+
+        let body: [String: Any] = [
+            "system_instruction": ["parts": [["text": systemPrompt]]],
+            "contents": contents
+        ]
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+
+        perform(request) { result in
+            DispatchQueue.main.async {
+                switch result {
+                case .failure(let error):
+                    completion(.failure(NetworkManager.networkFailure(error)))
+                case .success(let http):
+                    guard let json = try? JSONSerialization.jsonObject(with: http.data) as? [String: Any],
+                          let candidates = json["candidates"] as? [[String: Any]],
+                          let content = candidates.first?["content"] as? [String: Any],
+                          let parts = content["parts"] as? [[String: Any]],
+                          let responseText = parts.first?["text"] as? String else {
+                        completion(.failure(NetworkError.llmError(detail: NetworkManager.providerErrorDetail(http)))); return
+                    }
+                    completion(.success(responseText.trimmingCharacters(in: .whitespacesAndNewlines)))
+                }
+            }
+        }
+    }
+
+    private func callGeminiImage(imageData: Data, text: String, apiKey: String, history: [(question: String, answer: String)] = [], completion: @escaping (Result<String, Error>) -> Void) {
+        guard let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent") else {
+            completion(.failure(NetworkError.invalidURL)); return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
+
+        var contents: [[String: Any]] = []
+        for turn in history {
+            contents.append(["role": "user", "parts": [["text": turn.question]]])
+            contents.append(["role": "model", "parts": [["text": turn.answer]]])
+        }
+        contents.append(["role": "user", "parts": [
+            ["inline_data": ["mime_type": "image/jpeg", "data": imageData.base64EncodedString()]],
+            ["text": text]
+        ]])
 
         let body: [String: Any] = [
             "system_instruction": ["parts": [["text": systemPrompt]]],
