@@ -68,6 +68,9 @@ GEMINI_CONFIG = types.GenerateContentConfig(
     # (keeping voice replies fast) but can think through hard ones. A simple
     # question measured ~70 thought tokens / 0.8s total (2026-08-04).
     thinking_config=types.ThinkingConfig(thinking_budget=-1),
+    # Search grounding: the model searches only when the question needs live
+    # info (weather, scores, news). Gemini 3.x includes 5k searches/month free.
+    tools=[types.Tool(google_search=types.GoogleSearch())],
 )
 
 kokoro_pipeline = KPipeline(lang_code="a")
