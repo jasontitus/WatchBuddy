@@ -64,9 +64,10 @@ gemini_client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.7-flash")
 GEMINI_CONFIG = types.GenerateContentConfig(
     system_instruction="You are a helpful voice assistant on an Apple Watch. Be concise. Reply in 1-2 short sentences. Never use markdown or special formatting.",
-    # 3.6-flash rejected thinking_budget=0; 3.7-flash accepts it again
-    # (verified 2026-08-04), giving the lowest voice-reply latency.
-    thinking_config=types.ThinkingConfig(thinking_budget=0),
+    # -1 = dynamic thinking: the model skips thinking on easy questions
+    # (keeping voice replies fast) but can think through hard ones. A simple
+    # question measured ~70 thought tokens / 0.8s total (2026-08-04).
+    thinking_config=types.ThinkingConfig(thinking_budget=-1),
 )
 
 kokoro_pipeline = KPipeline(lang_code="a")
