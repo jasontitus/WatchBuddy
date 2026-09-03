@@ -689,7 +689,7 @@ final class NetworkManager: NSObject, ObservableObject {
     }
 
     private func callGemini(text: String, apiKey: String, history: [(question: String, answer: String)] = [], completion: @escaping (Result<String, Error>) -> Void) {
-        guard let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.7-flash:generateContent") else {
+        guard let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent") else {
             completion(.failure(NetworkError.invalidURL)); return
         }
 
@@ -733,7 +733,7 @@ final class NetworkManager: NSObject, ObservableObject {
     }
 
     private func callGeminiImage(imageData: Data, text: String, apiKey: String, history: [(question: String, answer: String)] = [], completion: @escaping (Result<String, Error>) -> Void) {
-        guard let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.7-flash:generateContent") else {
+        guard let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent") else {
             completion(.failure(NetworkError.invalidURL)); return
         }
 

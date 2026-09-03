@@ -61,12 +61,13 @@ _whisper_lock = threading.Lock()
 _kokoro_lock = threading.Lock()
 
 gemini_client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.7-flash")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
 GEMINI_CONFIG = types.GenerateContentConfig(
     system_instruction="You are a helpful voice assistant on an Apple Watch. Be concise. Reply in 1-2 short sentences. Never use markdown or special formatting.",
     # -1 = dynamic thinking: the model skips thinking on easy questions
-    # (keeping voice replies fast) but can think through hard ones. A simple
-    # question measured ~70 thought tokens / 0.8s total (2026-08-04).
+    # (keeping voice replies fast) but can think through hard ones. On
+    # 3.8-flash a simple question measured ~150 thought tokens / 1.2s total
+    # (2026-09-02).
     thinking_config=types.ThinkingConfig(thinking_budget=-1),
     # Search grounding: the model searches only when the question needs live
     # info (weather, scores, news). Gemini 3.x includes 5k searches/month free.
